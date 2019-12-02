@@ -7,24 +7,55 @@ echo "Running script as $(whoami)"
 OMERO_PATH=~/prog/omero
 OMERO_INIT_PASS=Orionsbelt32
 
-HELP="""
-Installs OMERO.server to $OMERO_PATH and loads it using systemctl.
-It will not repeat installations
+ROOTPASS=$OMERO_INIT_PASS
+OMEROHOST=localhost
+OMEROPORT=4064
 
--u --update  to update this machine and install all dependencies
+HELP="""
+The AIM Install Script for OMERO.server + OMERO.web + OME Seadragon + PathViewer
+Installs everything(!) to a newly installed Ubuntu 18.04 computer. The directory structure will be added to by these apps:
+
+/opt/Ice-3.6.4
+~/code/pathviewer
+~/prog/n # the Node.js version manager
+~/prog/omero/data # data stored by OMERO.server
+~/prog/omero/OMERO.server
+~/prog/omero/OMERO.insight
+~/prog/omero/web_plugins/ome_seadragon
+
+It will install the programs:
+
+ome_seadragon
+
+nginx: serves OMERO.web and plugins
+
+pathviewer:
+
+It will not repeat installation tasks already done previously so this script can be run multiple times for whatever reason.
+
+-u, --update  to update this machine and install all APT dependencies
+-p, --pip     to pip install Python dependencies
 
 TODO: need stronger checks for whether db.sql script has been called
+TODO: finish this help message
 """
 
 SHOULD_UPDATE=
+SHOULD_PIP_INSTALL=
+SHOULD_NPM_INSTALL=
 
 while [[ $# -gt 0 ]] ; do
     case "$1" in
         -h | --help)
             exit 0 ;;
-        -u | --update)
+        --update)
             SHOULD_UPDATE=1 ;;
+        --pip)
+            SHOULD_PIP_INSTALL=1 ;;
+        --npm)
+            SHOULD_NPM_INSTALL=1 ;;
     esac
+    shift
 done
 
 #################################
@@ -42,7 +73,7 @@ if [[ -n "$SHOULD_UPDATE" ]]; then
     sudo apt -y install python-{pip,tables,virtualenv,yaml,jinja2,pillow,numpy,wheel,setuptools}
 fi
 
-# install Ice 3.6.4
+echo "install Ice 3.6.4"
 # not sure if this is library is necessary to run OMERO.server
 if [[ ! -d /opt/Ice-3.6.4 ]] ; then
     wget -P ~/ "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.1.0/Ice-3.6.4-ubuntu1804-amd64.tar.xz"
@@ -51,19 +82,20 @@ if [[ ! -d /opt/Ice-3.6.4 ]] ; then
     sudo chown -R root:root /opt/Ice-3.6.4
 fi
 
-# set Ice libraries
+echo "set Ice libraries"
 if [[ ! -f /etc/ld.so.conf.d/ice-x86_64.conf ]] ; then
     echo /opt/Ice-3.6.4/lib/x86_64-linux-gnu | sudo tee -a /etc/ld.so.conf.d/ice-x86_64.conf
     sudo chown root:root /etc/ld.so.conf.d/ice-x86_64.conf
     sudo ldconfig
 fi
 
-# set Ice 3.6.4 Python package
-if [[ -n "$SHOULD_UPDATE" ]] && ! pip freeze | grep -qx "zeroc-ice==[0-9\.]*$" ; then
-    pip install zeroc-ice>3.5,<3.7
+echo "set Ice 3.6.* Python package"
+if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! pip freeze | grep -qx "zeroc-ice==[0-9\.]*$" ; then
+    pip install zeroc-ice==3.6.5
 fi
 
 # set .profile. May want to change Ice verion to 3.6.5, etc...
+echo "set OMERO variables in .profile"
 PROFILE_APPEND="""
 
 # OMERO admin settings
@@ -74,6 +106,11 @@ OMERO_ROOT_PASS=$OMERO_INIT_PASS
 OMERO_DATA_DIR=$OMERO_PATH/data
 export OMERO_DB_USER OMERO_DB_PASS OMERO_DB_NAME OMERO_ROOT_PASS OMERO_DATA_DIR
 export PGPASSWORD=\$OMERO_DB_PASS
+
+# OMERO AIM Users
+AIM_GROUP=aim_data
+AIM_PUBLIC_USER_NAME=aim_public
+AIM_PUBLIC_USER_PASS=$OMERO_INIT_PASS
 
 # Ice settings
 export ICE_HOME=/opt/Ice-3.6.4
@@ -91,6 +128,7 @@ source ~/.profile
 # set up Postgres #
 ###################
 
+echo "starting PostgreSQL"
 if ! systemctl is-active --quiet postgresql ; then
     sudo systemctl restart postgresql # start as user
 fi
@@ -110,7 +148,7 @@ fi
 # create path for OMERO installation #
 
 mkdir -p "$OMERO_PATH"
-mkdir -p "$OMERO_PATH/data"
+mkdir -p "$OMERO_DATA_DIR"
 
 #########################
 # install OMERO.insight #
@@ -162,6 +200,7 @@ source ~/.profile
 # Configuration #
 #################
 
+echo "OMERO.server DB config"
 omero config set omero.data.dir "$OMERO_DATA_DIR"
 omero config set omero.db.name "$OMERO_DB_NAME"
 omero config set omero.db.user "$OMERO_DB_USER"
@@ -172,6 +211,8 @@ omero config set omero.glacier2.IceSSL.Ciphers HIGH:ADH:@SECLEVEL=0
 # Create Postgres database #
 ############################
 
+# Not sure how to detect whether DB has been instantiated
+echo "Instantiate DB in PostgreSQL"
 DB_CREATION_SCRIPT="${OMERO_PATH}/OMERO.server/db.sql"
 if [[ ! -f "$DB_CREATION_SCRIPT" ]] ; then
     omero db script -f "$DB_CREATION_SCRIPT" --password "$OMERO_ROOT_PASS"
@@ -194,7 +235,7 @@ if [[ ! -f /etc/sysconfig/omero ]] ; then
     echo "$OMERO_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero > /dev/null
 fi
 
-OMERO_SERVICE_SCRIPT="""
+OMERO_SERVER_SERVICE_SCRIPT="""
 [Unit]
 Description=Start the OMERO Server
 After=syslog.target network.target
@@ -215,7 +256,7 @@ WantedBy=multi-user.target
 
 OMERO_SERVICE="omero@$(whoami).service"
 if [[ ! -f "/etc/systemd/system/$OMERO_SERVICE" ]] ; then
-    echo "$OMERO_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_SERVICE > /dev/null
+    echo "$OMERO_SERVER_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_SERVICE > /dev/null
     sudo systemctl daemon-reload
 fi
 
@@ -233,7 +274,7 @@ fi
 # NGINX for OMERO.web #
 #######################
 
-if [[ -n "$SHOULD_UPDATE" ]]; then
+if [[ -n "$SHOULD_PIP_INSTALL" ]]; then
     sudo apt -y install nginx
     pip install -r "$OMERO_PATH/OMERO.server/share/web/requirements-py27.txt"
 fi
@@ -242,7 +283,7 @@ omero config set omero.web.application_server wsgi-tcp
 
 NGINX_CONF_TMP="$OMERO_PATH/OMERO.server/nginx.conf.tmp"
 NGINX_CONF=/etc/nginx/sites-available/omero-web
-if [[ ! -f  "$OMERO_NGINX_CONF" ]]; then
+if [[ ! -f  "$NGINX_CONF" ]]; then
     omero web config nginx --http 80 > "$NGINX_CONF_TMP"
     sudo cp "$NGINX_CONF_TMP" "$NGINX_CONF"
     sudo rm -f /etc/nginx/sites-enabled/default
@@ -250,21 +291,171 @@ if [[ ! -f  "$OMERO_NGINX_CONF" ]]; then
     sudo systemctl restart nginx
 fi
 
+############################
+# Install N (Node.js, NPM) #
+############################
+
+# N (Node.js, NPM) is required for webapps to run.
+# It is better to install these as local user and add them
+# to user path to avoid using sudo and enabling security risks
+
+if [[ ! -d ~/prog/n ]] ; then
+    curl -L "https://git.io/n-install" | N_PREFIX=~/prog/n bash
+fi
+
+PROFILE_APPEND="""
+# N binary path
+N_BIN=$HOME/prog/n/bin
+PATH+=:\$N_BIN
+"""
+if ! grep -qxF "N_BIN=$HOME/prog/n/bin" ~/.profile ; then
+    echo "$PROFILE_APPEND" >> ~/.profile
+fi
+source ~/.profile
+
+#####################
+# OMERO Web plugins #
+#####################
+
+echo "set up OMERO.web plugins path"
+WEB_PLUGINS_PATH="$OMERO_PATH/web_plugins"
+mkdir -p "$WEB_PLUGINS_PATH"
+PROFILE_APPEND="""
+# OMERO web plugins path
+WEB_PLUGINS_PATH=$WEB_PLUGINS_PATH
+export PYTHONPATH+=:\$WEB_PLUGINS_PATH
+"""
+if ! grep -qxF "export PYTHONPATH+=:\$WEB_PLUGINS_PATH" ~/.profile ; then
+    echo "$PROFILE_APPEND" >> ~/.profile
+fi
+source ~/.profile
+if [[ -n "$SHOULD_NPM_INSTALL" ]] ; then
+    npm install -g grunt
+fi
+
+######################################
+# Install OME Seadragon dependencies #
+######################################
+
+# Redis is key/value store and is used for image caching
+
+if [[ -n "$SHOULD_UPDATE" ]]; then
+    sudo apt install -y redis
+    sudo apt install -y openslide-tools
+fi
+
+####################################
+# Download and setup OME Seadragon #
+####################################
+
+OME_SEADRAGON_VERSION=0.6.16
+OME_SEADRAGON_PATH="$WEB_PLUGINS_PATH/ome_seadragon"
+OME_SEADRAGON_ZIP=~/"v${OME_SEADRAGON_VERSION}.zip"
+if [[ ! -d "$OME_SEADRAGON_PATH" ]] ; then
+    if [[ ! -f "$OME_SEADRAGON_ZIP" ]] ; then
+        wget -P ~/ "https://github.com/crs4/ome_seadragon/archive/v${OME_SEADRAGON_VERSION}.zip"
+    fi
+    unzip "$OME_SEADRAGON_ZIP" -d "$WEB_PLUGINS_PATH"
+    mv "$WEB_PLUGINS_PATH/ome_seadragon"{-${OME_SEADRAGON_VERSION},}
+fi
+
+if [[ -n "$SHOULD_PIP_INSTALL" ]] ; then
+    pip install -r "$OME_SEADRAGON_PATH/requirements.txt"
+fi
+
+cd "$OME_SEADRAGON_PATH"
+if [[ -n "$SHOULD_NPM_INSTALL" ]] ; then
+    npm install
+fi
+grunt
+cd
+
+! omero config get omero.web.apps | grep -qF "\"ome_seadragon\"" && omero config append omero.web.apps '"ome_seadragon"'
+omero config set omero.web.session_cookie_name ome_seadragon_web
+
+#######################
+# Enable CORS headers #
+#######################
+
+echo "setting the corsheaders Django middleware in OMERO.web"
+! omero config get omero.web.apps | grep -qF "\"corsheaders\"" && omero config append omero.web.apps '"corsheaders"'
+CORS_MIDDLEWARE='{"index": 0.5, "class": "corsheaders.middleware.CorsMiddleware"}'
+! omero config get omero omero.web.middleware | grep -qF "\"$CORS_MIDDLEWARE\"" && omero config append omero.web.middleware "$CORS_MIDDLEWARE"
+CORS_POST_CSF_MIDDLEWARE='{"index": 10, "class": "corsheaders.middleware.CorsPostCsrfMiddleware"}'
+omero config get omero.web.middleware | grep -qF "\"$CORS_POST_CSF_MIDDLEWARE\"" && omero config append omero.web.middleware "$CORS_POST_CSF_MIDDLEWARE"
+
+echo "no CORS whitelist, ALLOWING ALL HOSTS"
+omero config set omero.web.cors_origin_allow_all True
+
+################################################
+# Create a OMERO public user for OME Seadragon #
+################################################
 
 
-exit # stub
+echo "creating user group for OME Seadragon"
+omero group add --ignore-existing --server "$OMEROHOST" \
+    --port "$OMEROPORT" \
+    --user root \
+    --password "$ROOTPASS" \
+    --type read-only "$AIM_GROUP"
 
+echo "Creating PathViewer public user"
+omero user add --ignore-existing --server "$OMEROHOST" \
+    --port "$OMEROPORT" \
+    --user root \
+    --password "$ROOTPASS" \
+    "$AIM_PUBLIC_USER_NAME" AIM PUBLIC \
+    --group-name "$AIM_GROUP" \
+    --userpassword "$AIM_PUBLIC_USER_PASS"
 
+echo "Setup OMERO public user"
+URL_FILTER="^/ome_seadragon"
+omero config set omero.web.public.enabled True
+omero config set omero.web.public.user "$AIM_PUBLIC_USER_NAME"
+omero config set omero.web.public.password "$AIM_PUBLIC_USER_PASS"
+omero config set omero.web.public.url_filter "$URL_FILTER"
+omero config set omero.web.public.server_id 1
+omero config set omero.web.ome_seadragon.ome_public_user "$AIM_PUBLIC_USER_NAME"
 
+##########################################
+# Setup Redis image cache and repository #
+##########################################
 
+REDISHOST=localhost
+REDISPORT=6379
+REDISDB=0
+CACHE_EXPIRE_TIME='{"hours": 8}'
 
+echo "Setup REDIS cache"
+omero config set omero.web.ome_seadragon.images_cache.cache_enabled True
+omero config set omero.web.ome_seadragon.images_cache.driver 'redis'
+omero config set omero.web.ome_seadragon.images_cache.host "$REDISHOST"
+omero config set omero.web.ome_seadragon.images_cache.port "$REDISPORT"
+omero config set omero.web.ome_seadragon.images_cache.database "$REDISDB"
+omero config set omero.web.ome_seadragon.images_cache.expire_time "$CACHE_EXPIRE_TIME"
+omero config set omero.web.ome_seadragon.repository "$OMERO_DATA_DIR"
 
+############################
+# OMERO.web startup script #
+############################
 
+OMERO_WEB_SERVICE_SCRIPT="""
+[Unit]
+Description=Start the OMERO Web
+After=syslog.target network.target
 
+[Service]
+User=$(whoami)
+Group=$(whoami)
+Type=oneshot
+EnvironmentFile=-/etc/sysconfig/omero
+ExecStart=$OMERO_PATH/OMERO.server/bin/omero admin start
+ExecStop=$OMERO_PATH/OMERO.server/bin/omero admin stop
+ExecReload=$OMERO_PATH/OMERO.server/bin/omero admin restart
+RemainAfterExit=true
 
-
-
-
-
+[Install]
+WantedBy=multi-user.target
+"""
 
 exit

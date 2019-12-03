@@ -16,11 +16,11 @@ The AIM Install Script for OMERO.server + OMERO.web + OME Seadragon
 Installs everything(!) to a newly installed Ubuntu 18.04 computer with systemd. Directories / files will be directly modified or created by these apps:
 
 /opt/Ice-3.6.4
-/etc/sysconfig # environmental variables for startup scripts
+/etc/sysconfig      # environmental variables for startup scripts
 /etc/systemd/system # add startup scripts
-~/.profile # modified PATH variable, etc
-~/prog/n # the Node.js version manager
-~/prog/omero/data # data stored by OMERO.server
+~/.profile          # modified PATH variable, etc
+~/prog/n            # the Node.js version manager
+~/prog/omero/data           # data stored by OMERO.server
 ~/prog/omero/OMERO.server
 ~/prog/omero/OMERO.insight
 ~/prog/omero/web_plugins/ome_seadragon
@@ -35,7 +35,7 @@ nginx: serves OMERO.web and plugins
 
 It will not repeat installation tasks already done previously so this script can be run multiple times for whatever reason.
 
---update  to update this machine and install all APT dependencies
+--deps    to update this machine and install all APT dependencies
 --pip     to pip install Python dependencies
 --npm     to npm install NPM dependencies
 
@@ -43,7 +43,7 @@ TODO: need stronger checks for whether db.sql script has been called
 TODO: finish this help message
 """
 
-SHOULD_UPDATE=
+SHOULD_INSTALL=
 SHOULD_PIP_INSTALL=
 SHOULD_NPM_INSTALL=
 
@@ -52,8 +52,8 @@ while [[ $# -gt 0 ]] ; do
         -h | --help)
             echo "$HELP"
             exit 0 ;;
-        --update)
-            SHOULD_UPDATE=1 ;;
+        --deps)
+            SHOULD_INSTALL=1 ;;
         --pip)
             SHOULD_PIP_INSTALL=1 ;;
         --npm)
@@ -66,7 +66,7 @@ done
 # Dependencies for OMERO.server #
 #################################
 
-if [[ -n "$SHOULD_UPDATE" ]]; then
+if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt update
     sudo apt -y upgrade
     sudo apt -y install unzip bc wget cron git curl
@@ -278,8 +278,11 @@ fi
 # NGINX for OMERO.web #
 #######################
 
-if [[ -n "$SHOULD_PIP_INSTALL" ]]; then
+if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt -y install nginx
+fi
+
+if [[ -n "$SHOULD_PIP_INSTALL" ]]; then
     pip install -r "$OMERO_PATH/OMERO.server/share/web/requirements-py27.txt"
 fi
 
@@ -343,7 +346,7 @@ fi
 
 # Redis is key/value store and is used for image caching
 
-if [[ -n "$SHOULD_UPDATE" ]]; then
+if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt install -y redis
     sudo apt install -y openslide-tools
 fi
@@ -444,9 +447,10 @@ omero config set omero.web.ome_seadragon.repository "$OMERO_DATA_DIR"
 ############################
 
 OMERO_WEB_SERVICE_SCRIPT="""
-PATH=/home/fireofearth/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 PYTHONPATH=$WEB_PLUGINS_PATH
 """
+#:/usr/lib/python2.7:/usr/lib/python2.7/plat-x86_64-linux-gnu:/usr/lib/python2.7/lib-tk:/usr/lib/python2.7/lib-old:/usr/lib/python2.7/lib-dynload:$HOME/.local/lib/python2.7/site-packages:/usr/local/lib/python2.7/dist-packages:/usr/lib/python2.7/dist-packages
 
 sudo mkdir -p /etc/sysconfig
 if [[ ! -f /etc/sysconfig/omero-web ]] ; then
@@ -456,7 +460,7 @@ fi
 OMERO_WEB_SERVICE_SCRIPT="""
 [Unit]
 Description=Start the OMERO Web
-After=syslog.target network.target omero@fireofearth.service
+After=syslog.target network.target omero@$(whoami).service
 
 [Service]
 User=$(whoami)

@@ -12,29 +12,32 @@ OMEROHOST=localhost
 OMEROPORT=4064
 
 HELP="""
-The AIM Install Script for OMERO.server + OMERO.web + OME Seadragon + PathViewer
-Installs everything(!) to a newly installed Ubuntu 18.04 computer. The directory structure will be added to by these apps:
+The AIM Install Script for OMERO.server + OMERO.web + OME Seadragon
+Installs everything(!) to a newly installed Ubuntu 18.04 computer with systemd. Directories / files will be directly modified or created by these apps:
 
 /opt/Ice-3.6.4
-~/code/pathviewer
+/etc/sysconfig # environmental variables for startup scripts
+/etc/systemd/system # add startup scripts
+~/.profile # modified PATH variable, etc
 ~/prog/n # the Node.js version manager
 ~/prog/omero/data # data stored by OMERO.server
 ~/prog/omero/OMERO.server
 ~/prog/omero/OMERO.insight
 ~/prog/omero/web_plugins/ome_seadragon
+~/.local/<python stuff> # adds local Python libraries
 
 It will install the programs:
 
 ome_seadragon
-
+postgresql:
+redis:
 nginx: serves OMERO.web and plugins
-
-pathviewer:
 
 It will not repeat installation tasks already done previously so this script can be run multiple times for whatever reason.
 
--u, --update  to update this machine and install all APT dependencies
--p, --pip     to pip install Python dependencies
+--update  to update this machine and install all APT dependencies
+--pip     to pip install Python dependencies
+--npm     to npm install NPM dependencies
 
 TODO: need stronger checks for whether db.sql script has been called
 TODO: finish this help message
@@ -47,6 +50,7 @@ SHOULD_NPM_INSTALL=
 while [[ $# -gt 0 ]] ; do
     case "$1" in
         -h | --help)
+            echo "$HELP"
             exit 0 ;;
         --update)
             SHOULD_UPDATE=1 ;;
@@ -440,22 +444,45 @@ omero config set omero.web.ome_seadragon.repository "$OMERO_DATA_DIR"
 ############################
 
 OMERO_WEB_SERVICE_SCRIPT="""
+PATH=/home/fireofearth/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+PYTHONPATH=$WEB_PLUGINS_PATH
+"""
+
+sudo mkdir -p /etc/sysconfig
+if [[ ! -f /etc/sysconfig/omero-web ]] ; then
+    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero-web > /dev/null
+fi
+
+OMERO_WEB_SERVICE_SCRIPT="""
 [Unit]
 Description=Start the OMERO Web
-After=syslog.target network.target
+After=syslog.target network.target omero@fireofearth.service
 
 [Service]
 User=$(whoami)
 Group=$(whoami)
 Type=oneshot
-EnvironmentFile=-/etc/sysconfig/omero
-ExecStart=$OMERO_PATH/OMERO.server/bin/omero admin start
-ExecStop=$OMERO_PATH/OMERO.server/bin/omero admin stop
-ExecReload=$OMERO_PATH/OMERO.server/bin/omero admin restart
+EnvironmentFile=-/etc/sysconfig/omero-web
+ExecStart=$OMERO_PATH/OMERO.server/bin/omero web start
+ExecStop=$OMERO_PATH/OMERO.server/bin/omero web stop
+ExecReload=$OMERO_PATH/OMERO.server/bin/omero web restart
 RemainAfterExit=true
 
 [Install]
 WantedBy=multi-user.target
 """
+
+OMERO_WEB_SERVICE="omero-web@$(whoami).service"
+if [[ ! -f "/etc/systemd/system/$OMERO_WEB_SERVICE" ]] ; then
+    echo "creating OMERO.web startup script"
+    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_WEB_SERVICE > /dev/null
+    sudo systemctl daemon-reload
+fi
+
+if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
+    echo "enabling OMERO.web startup"
+    sudo systemctl enable "omero-web@$(whoami)"
+    sudo systemctl start "omero-web@$(whoami)"
+fi
 
 exit

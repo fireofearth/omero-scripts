@@ -45,3 +45,7 @@ For a full installation with one command do
 ```
 bash setup.sh --deps --pip --npm
 ```
+
+## Contributions
+
+Much of this script is based on [Lucas Lianas](https://github.com/lucalianas) and [CRS4](https://github.com/crs4/ome_seadragon) Dockerfiles. I thank them for providing OME Seadragon, their help and the Docker images. Of course I also thank the [OME Team](https://www.openmicroscopy.org/omero/) for creating the OMERO distribution for Pathology image administration.

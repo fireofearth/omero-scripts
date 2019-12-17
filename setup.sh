@@ -15,32 +15,34 @@ HELP="""
 The AIM Install Script for OMERO.server + OMERO.web + OME Seadragon
 Installs everything(!) to a newly installed Ubuntu 18.04 computer with systemd. Directories / files will be directly modified or created by these apps:
 
-/opt/Ice-3.6.4
-/etc/sysconfig      # environmental variables for startup scripts
-/etc/systemd/system # add startup scripts
-~/.profile          # modified PATH variable, etc
-~/prog/n            # the Node.js version manager
+/opt/Ice-3.6.4              # Ice RPC framework
+/etc/sysconfig              # environmental variables for startup scripts
+/etc/systemd/system         # add startup scripts
+~/.profile                  # modified PATH variable, etc
+~/prog/n                    # the Node.js version manager
 ~/prog/omero/data           # data stored by OMERO.server
 ~/prog/omero/OMERO.server
 ~/prog/omero/OMERO.insight
 ~/prog/omero/web_plugins/ome_seadragon
-~/.local/<python stuff> # adds local Python libraries
+~/.local/<python stuff>     # adds various local Python libraries
 
 It will install the programs:
 
-ome_seadragon
-postgresql:
-redis:
-nginx: serves OMERO.web and plugins
+OMERO.server:  the OMERO server
+OMERO.insight: the Java client for OMERO
+Ice:           RPC framework; not sure if this is really necessary
+postgresql:    metadata for OMERO.server
+ome_seadragon: integration for OpenSlide and OMERO
+redis:         image cache for OME Seadragon
+nginx:         serves files for OMERO.web and plugins
+N:             Node.js + NPM version manager used for Grunt and other front-end compilation tasks
 
 It will not repeat installation tasks already done previously so this script can be run multiple times for whatever reason.
 
---deps    to update this machine and install all APT dependencies
---pip     to pip install Python dependencies
---npm     to npm install NPM dependencies
-
-TODO: need stronger checks for whether db.sql script has been called
-TODO: finish this help message
+--help, -h  show this help message and quit
+--deps      to update this machine and install all APT dependencies
+--pip       to pip install Python dependencies
+--npm       to npm install NPM dependencies
 """
 
 SHOULD_INSTALL=
@@ -77,24 +79,24 @@ if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt -y install python-{pip,tables,virtualenv,yaml,jinja2,pillow,numpy,wheel,setuptools}
 fi
 
-echo "install Ice 3.6.4"
 # not sure if this is library is necessary to run OMERO.server
 if [[ ! -d /opt/Ice-3.6.4 ]] ; then
+    echo "install Ice 3.6.4"
     wget -P ~/ "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.1.0/Ice-3.6.4-ubuntu1804-amd64.tar.xz"
     sudo tar xvf ~/"Ice-3.6.4-ubuntu1804-amd64.tar.xz" -C /opt --strip 1
     rm ~/Ice-3.6.4-ubuntu1804-amd64.tar.xz
     sudo chown -R root:root /opt/Ice-3.6.4
 fi
 
-echo "set Ice libraries"
 if [[ ! -f /etc/ld.so.conf.d/ice-x86_64.conf ]] ; then
+    echo "set Ice libraries"
     echo /opt/Ice-3.6.4/lib/x86_64-linux-gnu | sudo tee -a /etc/ld.so.conf.d/ice-x86_64.conf
     sudo chown root:root /etc/ld.so.conf.d/ice-x86_64.conf
     sudo ldconfig
 fi
 
-echo "set Ice 3.6.* Python package"
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! pip freeze | grep -qx "zeroc-ice==[0-9\.]*$" ; then
+    echo "set Ice 3.6.* Python package"
     pip install zeroc-ice==3.6.5
 fi
 
@@ -132,8 +134,8 @@ source ~/.profile
 # set up Postgres #
 ###################
 
-echo "starting PostgreSQL"
 if ! systemctl is-active --quiet postgresql ; then
+    echo "starting PostgreSQL"
     sudo systemctl restart postgresql # start as user
 fi
 
@@ -291,6 +293,7 @@ omero config set omero.web.application_server wsgi-tcp
 NGINX_CONF_TMP="$OMERO_PATH/OMERO.server/nginx.conf.tmp"
 NGINX_CONF=/etc/nginx/sites-available/omero-web
 if [[ ! -f  "$NGINX_CONF" ]]; then
+    echo "adding OMERO.web static files to NGINX"
     omero web config nginx --http 80 > "$NGINX_CONF_TMP"
     sudo cp "$NGINX_CONF_TMP" "$NGINX_CONF"
     sudo rm -f /etc/nginx/sites-enabled/default
@@ -307,6 +310,7 @@ fi
 # to user path to avoid using sudo and enabling security risks
 
 if [[ ! -d ~/prog/n ]] ; then
+    echo "installing N Node.js version manager"
     curl -L "https://git.io/n-install" | N_PREFIX=~/prog/n bash
 fi
 
@@ -365,6 +369,7 @@ OME_SEADRAGON_VERSION=0.6.16
 OME_SEADRAGON_PATH="$WEB_PLUGINS_PATH/ome_seadragon"
 OME_SEADRAGON_ZIP=~/"v${OME_SEADRAGON_VERSION}.zip"
 if [[ ! -d "$OME_SEADRAGON_PATH" ]] ; then
+    echo "downloading OME Seadragon plugin"
     if [[ ! -f "$OME_SEADRAGON_ZIP" ]] ; then
         wget -P ~/ "https://github.com/crs4/ome_seadragon/archive/v${OME_SEADRAGON_VERSION}.zip"
     fi
@@ -421,13 +426,14 @@ omero user add --ignore-existing --server "$OMEROHOST" \
     --group-name "$AIM_GROUP" \
     --userpassword "$AIM_PUBLIC_USER_PASS"
 
-echo "Setup OMERO public user"
+echo "Setup OMERO public user in omero.web.public settings"
 URL_FILTER="^/ome_seadragon"
 omero config set omero.web.public.enabled True
 omero config set omero.web.public.user "$AIM_PUBLIC_USER_NAME"
 omero config set omero.web.public.password "$AIM_PUBLIC_USER_PASS"
 omero config set omero.web.public.url_filter "$URL_FILTER"
 omero config set omero.web.public.server_id 1
+echo "Setup OMERO public user in omero.web.ome_seadragon settings"
 omero config set omero.web.ome_seadragon.ome_public_user "$AIM_PUBLIC_USER_NAME"
 
 ##########################################
@@ -439,7 +445,7 @@ REDISPORT=6379
 REDISDB=0
 CACHE_EXPIRE_TIME='{"hours": 8}'
 
-echo "Setup REDIS cache"
+echo "Setup REDIS cache in omero.web.ome_seadragon settings"
 omero config set omero.web.ome_seadragon.images_cache.cache_enabled True
 omero config set omero.web.ome_seadragon.images_cache.driver 'redis'
 omero config set omero.web.ome_seadragon.images_cache.host "$REDISHOST"
@@ -456,10 +462,10 @@ OMERO_WEB_SERVICE_SCRIPT="""
 PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 PYTHONPATH=$WEB_PLUGINS_PATH
 """
-#:/usr/lib/python2.7:/usr/lib/python2.7/plat-x86_64-linux-gnu:/usr/lib/python2.7/lib-tk:/usr/lib/python2.7/lib-old:/usr/lib/python2.7/lib-dynload:$HOME/.local/lib/python2.7/site-packages:/usr/local/lib/python2.7/dist-packages:/usr/lib/python2.7/dist-packages
 
 sudo mkdir -p /etc/sysconfig
 if [[ ! -f /etc/sysconfig/omero-web ]] ; then
+    echo "creating OMERO.web service environmental variables"
     echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero-web > /dev/null
 fi
 
@@ -484,13 +490,13 @@ WantedBy=multi-user.target
 
 OMERO_WEB_SERVICE="omero-web@$(whoami).service"
 if [[ ! -f "/etc/systemd/system/$OMERO_WEB_SERVICE" ]] ; then
-    echo "creating OMERO.web startup script"
+    echo "creating OMERO.web service"
     echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_WEB_SERVICE > /dev/null
     sudo systemctl daemon-reload
 fi
 
 if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
-    echo "enabling OMERO.web startup"
+    echo "enabling OMERO.web systemd service"
     sudo systemctl enable "omero-web@$(whoami)"
     sudo systemctl start "omero-web@$(whoami)"
 fi

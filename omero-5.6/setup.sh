@@ -202,30 +202,34 @@ mkdir -p "$OMERO_DATA_DIR"
 #########################
 
 # TODO: is OMERO.insight 5.5.6 compatible? What about 5.5.8?
-OMERO_INSIGHT_VERSION="5.5.6"
-OMERO_INSIGHT="OMERO.insight-$OMERO_INSIGHT_VERSION"
-OMERO_INSIGHT_ZIP=~/"$OMERO_INSIGHT.zip"
-if [[ ! -d "$OMERO_PATH/$OMERO_INSIGHT" ]]; then
+OMERO_INSIGHT_SYMLINK="$OMERO_PATH/OMERO.insight"
+if [[ ! -d "$OMERO_INSIGHT_SYMLINK" ]]; then
+    OMERO_INSIGHT_VERSION="5.5.6"
+    OMERO_INSIGHT="OMERO.insight-$OMERO_INSIGHT_VERSION"
+    OMERO_INSIGHT_ZIP=~/"$OMERO_INSIGHT.zip"
+    echo "Installing OMERO.server"
     if [[ ! -f "$OMERO_INSIGHT_ZIP" ]]; then
         wget -P ~/ "https://github.com/ome/omero-insight/releases/download/v${OMERO_INSIGHT_VERSION}/$OMERO_INSIGHT.zip"
     fi
-    unzip "$OMERO_INSIGHT_ZIP" -d "$OMERO_PATH"
-    ln -s "$OMERO_PATH/$OMERO_INSIGHT" "$OMERO_PATH/OMERO.insight"
+    unzip ~/"$OMERO_INSIGHT_ZIP" -d "$OMERO_PATH"
+    ln -s "$OMERO_PATH/$OMERO_INSIGHT" "$OMERO_INSIGHT_SYMLINK"
+    rm ~/"$OMERO_INSIGHT_ZIP"
 fi
 
 ########################
 # install OMERO.server #
 ########################
 
-OMERODIR="$OMERO_PATH/OMERO.server"
+OMERO_SERVER_SYMLINK="$OMERO_PATH/OMERO.server"
 if [[ ! -e "$OMERODIR" ]]; then
+    echo "Installing OMERO.server"
     OMERO_FILE="OMERO.server-5.6.0-ice36-b136"
     OMERO_FILE_ZIP="$OMERO_FILE.zip"
     if [[ ! -f ~/"$OMERO_FILE_ZIP" ]]; then
        wget -P ~/ "https://downloads.openmicroscopy.org/omero/5.6.0/artifacts/$OMERO_FILE_ZIP"
     fi
     unzip ~/"$OMERO_FILE_ZIP" -d "$OMERO_PATH"
-    ln -s "$OMERO_PATH/$OMERO_FILE" "$OMERODIR"
+    ln -s "$OMERO_PATH/$OMERO_FILE" "$OMERO_SERVER_SYMLINK"
     rm ~/"$OMERO_FILE_ZIP"
 fi
 
@@ -234,10 +238,10 @@ fi
 ###########################
 
 PROFILE_APPEND="""# OMERO binary paths
-OMERO_SERVER_BIN=$OMERO_PATH/OMERO.server/bin
-OMERO_INSIGHT_BIN=$OMERO_PATH/OMERO.insight/bin
+OMERO_SERVER_BIN=$OMERO_SERVER_SYMLINK/bin
+OMERO_INSIGHT_BIN=$OMERO_INSIGHT_SYMLINK/bin
 PATH+=:\$OMERO_INSIGHT_BIN:\$OMERO_SERVER_BIN
-export OMERODIR=$OMERODIR
+export OMERODIR=$OMERO_SERVER_SYMLINK
 """
 
 if ! grep -qxF "OMERO_SERVER_BIN=$OMERO_PATH/OMERO.server/bin" ~/.profile ; then

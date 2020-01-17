@@ -275,7 +275,8 @@ fi
 # OMERO.server startup script #
 ###############################
 
-OMERO_SERVICE_SCRIPT="""ICE_HOME=/opt/$ICE_NAME
+OMERO_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
+ICE_HOME=/opt/$ICE_NAME
 PATH=/opt/$ICE_NAME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
 LD_LIBRARY_PATH=/opt/$ICE_NAME/lib64:/opt/$ICE_NAME/lib
 export SLICEPATH=/opt/$ICE_NAME/slice
@@ -283,6 +284,7 @@ export SLICEPATH=/opt/$ICE_NAME/slice
 
 sudo mkdir -p /etc/sysconfig
 if [[ ! -f /etc/sysconfig/omero ]] ; then
+    echo "Set up OMERO.server EnvironmentFile"
     echo "$OMERO_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero > /dev/null
 fi
 
@@ -307,11 +309,13 @@ WantedBy=multi-user.target
 
 OMERO_SERVICE="omero@$(whoami).service"
 if [[ ! -f "/etc/systemd/system/$OMERO_SERVICE" ]] ; then
+    echo "Set up OMERO.server Systemd service"
     echo "$OMERO_SERVER_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_SERVICE > /dev/null
     sudo systemctl daemon-reload
 fi
 
 if ! systemctl is-active --quiet "omero@$(whoami)" ; then
+    echo "Enable OMERO.server in Systemd"
     sudo systemctl enable "omero@$(whoami)"
     sudo systemctl start "omero@$(whoami)"
 fi

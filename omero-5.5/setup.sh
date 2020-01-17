@@ -356,12 +356,6 @@ if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt install -y openslide-tools
 fi
 
-if ! systemctl is-active --quiet "redis-server" ; then
-    echo "enabling OMERO.web startup"
-    sudo systemctl enable "redis-server"
-    sudo systemctl start "redis-server"
-fi
-
 ####################################
 # Download and setup OME Seadragon #
 ####################################

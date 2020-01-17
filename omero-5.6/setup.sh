@@ -173,7 +173,8 @@ source ~/.profile
 # set up Postgres #
 ###################
 
-# TODO: this is outdated: should install PostgreSQL 11
+# TODO: this is outdated: should install PostgreSQL 11 for better performance
+# Postgres 10 still works fine though
 
 if ! systemctl is-active --quiet postgresql ; then
     echo "starting PostgreSQL"
@@ -258,16 +259,14 @@ omero config set omero.db.user "$OMERO_DB_USER"
 omero config set omero.db.pass "$OMERO_DB_PASS"
 omero config set omero.glacier2.IceSSL.Ciphers HIGH:ADH:@SECLEVEL=0
 
-exit 0
-
 ############################
 # Create Postgres database #
 ############################
 
 # TODO: Not sure how to detect whether DB has been instantiated
-echo "Instantiate DB in PostgreSQL"
 DB_CREATION_SCRIPT="${OMERO_PATH}/OMERO.server/db.sql"
 if [[ ! -f "$DB_CREATION_SCRIPT" ]] ; then
+    echo "Instantiate DB in PostgreSQL"
     omero db script -f "$DB_CREATION_SCRIPT" --password "$OMERO_ROOT_PASS"
     psql -h localhost -U "$OMERO_DB_USER" "$OMERO_DB_NAME" < "$DB_CREATION_SCRIPT"
 fi
@@ -276,11 +275,10 @@ fi
 # OMERO.server startup script #
 ###############################
 
-OMERO_SERVICE_SCRIPT="""
-ICE_HOME=/opt/Ice-3.6.4
-PATH=/opt/Ice-3.6.4/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
-LD_LIBRARY_PATH=/opt/Ice-3.6.4/lib64:/opt/Ice-3.6.4/lib
-SLICEPATH=/opt/Ice-3.6.4/slice
+OMERO_SERVICE_SCRIPT="""ICE_HOME=/opt/$ICE_NAME
+PATH=/opt/$ICE_NAME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+LD_LIBRARY_PATH=/opt/$ICE_NAME/lib64:/opt/$ICE_NAME/lib
+export SLICEPATH=/opt/$ICE_NAME/slice
 """
 
 sudo mkdir -p /etc/sysconfig
@@ -318,16 +316,22 @@ if ! systemctl is-active --quiet "omero@$(whoami)" ; then
     sudo systemctl start "omero@$(whoami)"
 fi
 
+#####################
+# Install OMERO.web #
+#####################
+
+if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "omero-web==[0-9\.]*$" ; then
+    echo "Install omero-web 5.6.* Python package"
+    $VENV_BIN/pip install "omero-web>=5.6.1"
+fi
+
 #######################
 # NGINX for OMERO.web #
 #######################
 
+exit 0
 if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt -y install nginx
-fi
-
-if [[ -n "$SHOULD_PIP_INSTALL" ]]; then
-    pip install -r "$OMERO_PATH/OMERO.server/share/web/requirements-py27.txt"
 fi
 
 omero config set omero.web.application_server wsgi-tcp

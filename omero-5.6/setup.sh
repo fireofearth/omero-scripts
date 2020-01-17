@@ -201,15 +201,13 @@ mkdir -p "$OMERO_DATA_DIR"
 # install OMERO.insight #
 #########################
 
-# TODO: is OMERO.insight 5.5.6 compatible? What about 5.5.8?
 OMERO_INSIGHT_SYMLINK="$OMERO_PATH/OMERO.insight"
 if [[ ! -d "$OMERO_INSIGHT_SYMLINK" ]]; then
-    OMERO_INSIGHT_VERSION="5.5.6"
-    OMERO_INSIGHT="OMERO.insight-$OMERO_INSIGHT_VERSION"
-    OMERO_INSIGHT_ZIP=~/"$OMERO_INSIGHT.zip"
     echo "Installing OMERO.server"
+    OMERO_INSIGHT="OMERO.insight-5.5.8"
+    OMERO_INSIGHT_ZIP=~/"$OMERO_INSIGHT.zip"
     if [[ ! -f "$OMERO_INSIGHT_ZIP" ]]; then
-        wget -P ~/ "https://github.com/ome/omero-insight/releases/download/v${OMERO_INSIGHT_VERSION}/$OMERO_INSIGHT.zip"
+        wget -P ~/ "https://github.com/ome/omero-insight/releases/download/v5.5.8/$OMERO_INSIGHT_ZIP"
     fi
     unzip ~/"$OMERO_INSIGHT_ZIP" -d "$OMERO_PATH"
     ln -s "$OMERO_PATH/$OMERO_INSIGHT" "$OMERO_INSIGHT_SYMLINK"
@@ -223,14 +221,14 @@ fi
 OMERO_SERVER_SYMLINK="$OMERO_PATH/OMERO.server"
 if [[ ! -e "$OMERODIR" ]]; then
     echo "Installing OMERO.server"
-    OMERO_FILE="OMERO.server-5.6.0-ice36-b136"
-    OMERO_FILE_ZIP="$OMERO_FILE.zip"
-    if [[ ! -f ~/"$OMERO_FILE_ZIP" ]]; then
-       wget -P ~/ "https://downloads.openmicroscopy.org/omero/5.6.0/artifacts/$OMERO_FILE_ZIP"
+    OMERO_SERVER="OMERO.server-5.6.0-ice36-b136"
+    OMERO_SERVER_ZIP="$OMERO_SERVER.zip"
+    if [[ ! -f ~/"$OMERO_SERVER_ZIP" ]]; then
+       wget -P ~/ "https://downloads.openmicroscopy.org/omero/5.6.0/artifacts/$OMERO_SERVER_ZIP"
     fi
-    unzip ~/"$OMERO_FILE_ZIP" -d "$OMERO_PATH"
-    ln -s "$OMERO_PATH/$OMERO_FILE" "$OMERO_SERVER_SYMLINK"
-    rm ~/"$OMERO_FILE_ZIP"
+    unzip ~/"$OMERO_SERVER_ZIP" -d "$OMERO_PATH"
+    ln -s "$OMERO_PATH/$OMERO_SERVER" "$OMERODIR"
+    rm ~/"$OMERO_SERVER_ZIP"
 fi
 
 ###########################
@@ -319,11 +317,6 @@ if ! systemctl is-active --quiet "omero@$(whoami)" ; then
     sudo systemctl enable "omero@$(whoami)"
     sudo systemctl start "omero@$(whoami)"
 fi
-
-# clean up #
-
-#rm -f "$OMERO_INSIGHT_ZIP"
-#rm -f "$OMERO_SERVER_ZIP"
 
 #######################
 # NGINX for OMERO.web #

@@ -80,6 +80,7 @@ if [[ -n "$SHOULD_INSTALL" ]]; then
     # dependency postgresql
     # TODO: this is outdated: should install PostgreSQL 11
     sudo apt -y install postgresql
+    sudo apt autoremove
 fi
 
 #####################
@@ -144,7 +145,7 @@ source ~/.profile
 VENV_SERVER=$OMERO_PATH/venv_server
 if [[ ! -d "$VENV_SERVER" ]]; then
     echo "set Python VENV for OMERO"
-    python -m venv $VENV_SERVER
+    python3 -m venv $VENV_SERVER
 fi
 
 VENV_BIN=$VENV_SERVER/bin

@@ -218,14 +218,14 @@ fi
 ########################
 
 OMERODIR="$OMERO_PATH/OMERO.server"
-if [[ ! -d "$OMERO_PATH/$OMERO_SERVER" ]]; then
+if [[ ! -e "$OMERODIR" ]]; then
     OMERO_FILE="OMERO.server-5.6.0-ice36-b136"
     OMERO_FILE_ZIP="$OMERO_FILE.zip"
     if [[ ! -f ~/"$OMERO_FILE_ZIP" ]]; then
        wget -P ~/ "https://downloads.openmicroscopy.org/omero/5.6.0/artifacts/$OMERO_FILE_ZIP"
     fi
     unzip ~/"$OMERO_FILE_ZIP" -d "$OMERO_PATH"
-    ln -s "$OMERO_PATH/$OMERO_FILE"
+    ln -s "$OMERO_PATH/$OMERO_FILE" "$OMERODIR"
     rm ~/"$OMERO_FILE_ZIP"
 fi
 

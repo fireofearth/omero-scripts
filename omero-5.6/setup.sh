@@ -205,7 +205,7 @@ OMERO_INSIGHT_SYMLINK="$OMERO_PATH/OMERO.insight"
 if [[ ! -d "$OMERO_INSIGHT_SYMLINK" ]]; then
     echo "Installing OMERO.server"
     OMERO_INSIGHT="OMERO.insight-5.5.8"
-    OMERO_INSIGHT_ZIP=~/"$OMERO_INSIGHT.zip"
+    OMERO_INSIGHT_ZIP="$OMERO_INSIGHT.zip"
     if [[ ! -f "$OMERO_INSIGHT_ZIP" ]]; then
         wget -P ~/ "https://github.com/ome/omero-insight/releases/download/v5.5.8/$OMERO_INSIGHT_ZIP"
     fi

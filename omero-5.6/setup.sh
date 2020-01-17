@@ -109,7 +109,6 @@ fi
 # Set initial .profile variables #
 ##################################
 
-echo "set OMERO variables in .profile"
 PROFILE_APPEND="""
 # OMERO admin settings
 OMERO_DB_USER=$(whoami)
@@ -133,6 +132,7 @@ export SLICEPATH=\$ICE_HOME/slice
 """
 
 if ! grep -qxF "OMERO_DB_USER=$(whoami)" ~/.profile ; then
+    echo "set OMERO variables in .profile"
     echo "$PROFILE_APPEND" >> ~/.profile
 fi
 source ~/.profile
@@ -143,6 +143,7 @@ source ~/.profile
 
 VENV_SERVER=$OMERO_PATH/venv_server
 if [[ ! -d "$VENV_SERVER" ]]; then
+    echo "set Python VENV for OMERO"
     python -m venv $VENV_SERVER
 fi
 

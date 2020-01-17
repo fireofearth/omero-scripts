@@ -142,7 +142,7 @@ source ~/.profile
 #################################
 
 VENV_SERVER=$OMERO_PATH/venv_server
-if [[ ! "$VENV_SERVER" ]]; then
+if [[ ! -d "$VENV_SERVER" ]]; then
     python -m venv $VENV_SERVER
 fi
 

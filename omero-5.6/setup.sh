@@ -88,10 +88,11 @@ fi
 
 ICE_NAME="ice-3.6.5-0.3.0"
 ICE_TAR="$ICE_NAME-ubuntu1804-amd64.tar.gz"
-if [[ ! -d /opt/Ice-3.6.5 ]] ; then
+if [[ ! -d /opt/Ice-3.6.5 ]]; then
     echo "Installing $ICE_NAME"
-    if [[ ! -f ]]
-    wget -P ~/ "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/$ICE_TAR"
+    if [[ ! -f "$ICE_TAR" ]]; then
+        wget -P ~/ "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/$ICE_TAR"
+    fi
     sudo tar xvf ~/"$ICE_TAR" -C /opt
     rm ~/"$ICE_TAR"
     sudo chown -R root:root /opt/$ICE_NAME
@@ -259,7 +260,7 @@ exit 0
 # Create Postgres database #
 ############################
 
-# Not sure how to detect whether DB has been instantiated
+# TODO: Not sure how to detect whether DB has been instantiated
 echo "Instantiate DB in PostgreSQL"
 DB_CREATION_SCRIPT="${OMERO_PATH}/OMERO.server/db.sql"
 if [[ ! -f "$DB_CREATION_SCRIPT" ]] ; then

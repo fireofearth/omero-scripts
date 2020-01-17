@@ -296,9 +296,9 @@ User=$(whoami)
 Group=$(whoami)
 Type=oneshot
 EnvironmentFile=-/etc/sysconfig/omero
-ExecStart=$OMERO_PATH/OMERO.server/bin/omero admin start
-ExecStop=$OMERO_PATH/OMERO.server/bin/omero admin stop
-ExecReload=$OMERO_PATH/OMERO.server/bin/omero admin restart
+ExecStart=$VENV_BIN/omero admin start
+ExecStop=$VENV_BIN/omero admin stop
+ExecReload=$VENV_BIN/omero admin restart
 RemainAfterExit=true
 
 [Install]

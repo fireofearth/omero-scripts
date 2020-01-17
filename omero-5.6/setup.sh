@@ -88,10 +88,10 @@ fi
 
 ICE_NAME="ice-3.6.5-0.3.0"
 ICE_TAR="$ICE_NAME-ubuntu1804-amd64.tar.gz"
-if [[ ! -d /opt/Ice-3.6.5 ]]; then
+if [[ ! -d "/opt/$ICE_NAME" ]]; then
     echo "Installing $ICE_NAME"
     if [[ ! -f "$ICE_TAR" ]]; then
-        wget -P ~/ "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/$ICE_TAR"
+        wget -q -P ~/ "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/$ICE_TAR"
     fi
     sudo tar xvf ~/"$ICE_TAR" -C /opt
     rm ~/"$ICE_TAR"

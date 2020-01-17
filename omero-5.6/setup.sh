@@ -5,6 +5,7 @@ set -e
 echo "Running script as $(whoami)"
 
 OMERO_PATH=~/prog/omero
+OMERO_DATA_PATH=~/hdd/omero/data
 OMERO_INIT_PASS=Orionsbelt32
 
 ROOTPASS=$OMERO_INIT_PASS
@@ -30,7 +31,7 @@ It will install the programs:
 
 OMERO.server:  the OMERO server
 OMERO.insight: the Java client for OMERO
-Ice:           RPC framework; not sure if this is really necessary
+Ice:           RPC framework
 postgresql:    metadata for OMERO.server
 ome_seadragon: integration for OpenSlide and OMERO
 redis:         image cache for OME Seadragon
@@ -64,52 +65,57 @@ while [[ $# -gt 0 ]] ; do
     shift
 done
 
-#################################
-# Dependencies for OMERO.server #
-#################################
+#####################################
+# Dependencies APT for OMERO.server #
+#####################################
 
 if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt update
     sudo apt -y upgrade
     sudo apt -y install unzip bc wget cron git curl
     # build tools and dependencies
-    sudo apt -y install build-essential default-jdk postgresql zlib1g-dev
+    sudo apt -y install build-essential openjdk-11-jdk python3 python3-venv
     # dependencies for Ice
     sudo apt -y install db5.3-util libbz2-dev libdb++-dev libdb-dev libexpat-dev libmcpp-dev libssl-dev mcpp zlib1g-dev
-    sudo apt -y install python-{pip,tables,virtualenv,yaml,jinja2,pillow,numpy,wheel,setuptools}
+    # dependency postgresql
+    # TODO: this is outdated: should install PostgreSQL 11
+    sudo apt -y install postgresql
 fi
 
-# not sure if this is library is necessary to run OMERO.server
-if [[ ! -d /opt/Ice-3.6.4 ]] ; then
-    echo "install Ice 3.6.4"
-    wget -P ~/ "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.1.0/Ice-3.6.4-ubuntu1804-amd64.tar.xz"
-    sudo tar xvf ~/"Ice-3.6.4-ubuntu1804-amd64.tar.xz" -C /opt --strip 1
-    rm ~/Ice-3.6.4-ubuntu1804-amd64.tar.xz
-    sudo chown -R root:root /opt/Ice-3.6.4
+#####################
+# Install ZeroC Ice #
+#####################
+
+ICE_NAME="ice-3.6.5-0.3.0"
+ICE_TAR="$ICE_NAME-ubuntu1804-amd64.tar.gz"
+if [[ ! -d /opt/Ice-3.6.5 ]] ; then
+    echo "Installing $ICE_NAME"
+    if [[ ! -f ]]
+    wget -P ~/ "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/$ICE_TAR"
+    sudo tar xvf ~/"$ICE_TAR" -C /opt
+    rm ~/"$ICE_TAR"
+    sudo chown -R root:root /opt/$ICE_NAME
 fi
 
 if [[ ! -f /etc/ld.so.conf.d/ice-x86_64.conf ]] ; then
-    echo "set Ice libraries"
-    echo /opt/Ice-3.6.4/lib/x86_64-linux-gnu | sudo tee -a /etc/ld.so.conf.d/ice-x86_64.conf
+    echo "set $ICE_NAME libraries"
+    echo /opt/"$ICE_NAME"/lib/x86_64-linux-gnu | sudo tee -a /etc/ld.so.conf.d/ice-x86_64.conf
     sudo chown root:root /etc/ld.so.conf.d/ice-x86_64.conf
     sudo ldconfig
 fi
 
-if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! pip freeze | grep -qx "zeroc-ice==[0-9\.]*$" ; then
-    echo "set Ice 3.6.* Python package"
-    pip install zeroc-ice==3.6.5
-fi
+##################################
+# Set initial .profile variables #
+##################################
 
-# set .profile. May want to change Ice verion to 3.6.5, etc...
 echo "set OMERO variables in .profile"
 PROFILE_APPEND="""
-
 # OMERO admin settings
 OMERO_DB_USER=$(whoami)
 OMERO_DB_PASS=$OMERO_INIT_PASS
 OMERO_DB_NAME=omero_database
 OMERO_ROOT_PASS=$OMERO_INIT_PASS
-OMERO_DATA_DIR=$OMERO_PATH/data
+OMERO_DATA_DIR=$OMERO_DATA_PATH
 export OMERO_DB_USER OMERO_DB_PASS OMERO_DB_NAME OMERO_ROOT_PASS OMERO_DATA_DIR
 export PGPASSWORD=\$OMERO_DB_PASS
 
@@ -119,7 +125,7 @@ AIM_PUBLIC_USER_NAME=aim_public
 AIM_PUBLIC_USER_PASS=$OMERO_INIT_PASS
 
 # Ice settings
-export ICE_HOME=/opt/Ice-3.6.4
+export ICE_HOME=/opt/$ICE_NAME
 export PATH+=:\$ICE_HOME/bin
 export LD_LIBRARY_PATH+=:\$ICE_HOME/lib64:\$ICE_HOME/lib
 export SLICEPATH=\$ICE_HOME/slice
@@ -130,9 +136,41 @@ if ! grep -qxF "OMERO_DB_USER=$(whoami)" ~/.profile ; then
 fi
 source ~/.profile
 
+#################################
+# Install Python VENV for OMERO #
+#################################
+
+VENV_SERVER=$OMERO_PATH/venv_server
+if [[ ! "$VENV_SERVER" ]]; then
+    python -m venv $VENV_SERVER
+fi
+
+VENV_BIN=$VENV_SERVER/bin
+if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "zeroc-ice==[0-9\.]*$" ; then
+    echo "Install zeroc-ice 3.6.* Python package"
+    $VENV_SERVER/pip install "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/zeroc_ice-3.6.5-cp36-cp36m-linux_x86_64.whl"
+fi
+
+if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "omero-py==[0-9\.]*$" ; then
+    echo "Install omero-py 5.6.* Python package"
+    $VENV_SERVER/pip install "omero-py>=5.6.0"
+fi
+
+PROFILE_APPEND="""# Python VENV
+VENV_SERVER=$VENV_SERVER
+export PATH+=:\$VENV_SERVER/bin
+"""
+
+if ! grep -qxF "VENV_SERVER=$VENV_SERVER" ~/.profile ; then
+    echo "$PROFILE_APPEND" >> ~/.profile
+fi
+source ~/.profile
+
 ###################
 # set up Postgres #
 ###################
+
+# TODO: this is outdated: should install PostgreSQL 11
 
 if ! systemctl is-active --quiet postgresql ; then
     echo "starting PostgreSQL"
@@ -160,6 +198,7 @@ mkdir -p "$OMERO_DATA_DIR"
 # install OMERO.insight #
 #########################
 
+# TODO: is OMERO.insight 5.5.6 compatible? What about 5.5.8?
 OMERO_INSIGHT_VERSION="5.5.6"
 OMERO_INSIGHT="OMERO.insight-$OMERO_INSIGHT_VERSION"
 OMERO_INSIGHT_ZIP=~/"$OMERO_INSIGHT.zip"
@@ -175,26 +214,27 @@ fi
 # install OMERO.server #
 ########################
 
-OMERO_SERVER="OMERO.server-5.5.1-ice36-b122"
-OMERO_SERVER_ZIP=~/"$OMERO_SERVER.zip"
+OMERODIR="$OMERO_PATH/OMERO.server"
 if [[ ! -d "$OMERO_PATH/$OMERO_SERVER" ]]; then
-    if [[ ! -f "$OMERO_SERVER_ZIP" ]]; then
-       wget -P ~/ "https://downloads.openmicroscopy.org/omero/5.5.1/artifacts/$OMERO_SERVER.zip"
+    OMERO_FILE="OMERO.server-5.6.0-ice36-b136"
+    OMERO_FILE_ZIP="$OMERO_FILE.zip"
+    if [[ ! -f ~/"$OMERO_FILE_ZIP" ]]; then
+       wget -P ~/ "https://downloads.openmicroscopy.org/omero/5.6.0/artifacts/$OMERO_FILE_ZIP"
     fi
-    unzip "$OMERO_SERVER_ZIP" -d "$OMERO_PATH"
-    ln -s "$OMERO_PATH/$OMERO_SERVER" "$OMERO_PATH/OMERO.server"
+    unzip ~/"$OMERO_FILE_ZIP" -d "$OMERO_PATH"
+    ln -s "$OMERO_PATH/$OMERO_FILE"
+    rm ~/"$OMERO_FILE_ZIP"
 fi
 
 ###########################
 # Add executables to PATH #
 ###########################
 
-PROFILE_APPEND="""
-
-# OMERO binary paths
+PROFILE_APPEND="""# OMERO binary paths
 OMERO_SERVER_BIN=$OMERO_PATH/OMERO.server/bin
 OMERO_INSIGHT_BIN=$OMERO_PATH/OMERO.insight/bin
 PATH+=:\$OMERO_INSIGHT_BIN:\$OMERO_SERVER_BIN
+export OMERODIR=$OMERODIR
 """
 
 if ! grep -qxF "OMERO_SERVER_BIN=$OMERO_PATH/OMERO.server/bin" ~/.profile ; then
@@ -212,6 +252,8 @@ omero config set omero.db.name "$OMERO_DB_NAME"
 omero config set omero.db.user "$OMERO_DB_USER"
 omero config set omero.db.pass "$OMERO_DB_PASS"
 omero config set omero.glacier2.IceSSL.Ciphers HIGH:ADH:@SECLEVEL=0
+
+exit 0
 
 ############################
 # Create Postgres database #
@@ -409,7 +451,7 @@ omero group add --ignore-existing --server "$OMEROHOST" \
     --port "$OMEROPORT" \
     --user root \
     --password "$ROOTPASS" \
-    --type read-only "$AIM_GROUP"
+    --type read-annotate "$AIM_GROUP"
 
 echo "Creating PathViewer public user"
 omero user add --ignore-existing --server "$OMEROHOST" \

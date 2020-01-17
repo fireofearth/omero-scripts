@@ -161,7 +161,7 @@ fi
 
 PROFILE_APPEND="""# Python VENV
 VENV_SERVER=$VENV_SERVER
-export PATH+=:\$VENV_SERVER/bin
+PATH=\$VENV_SERVER/bin:\$PATH
 """
 
 if ! grep -qxF "VENV_SERVER=$VENV_SERVER" ~/.profile ; then

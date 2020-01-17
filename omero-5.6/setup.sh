@@ -151,12 +151,12 @@ fi
 VENV_BIN=$VENV_SERVER/bin
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "zeroc-ice==[0-9\.]*$" ; then
     echo "Install zeroc-ice 3.6.* Python package"
-    $VENV_SERVER/pip install "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/zeroc_ice-3.6.5-cp36-cp36m-linux_x86_64.whl"
+    $VENV_BIN/pip install "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/zeroc_ice-3.6.5-cp36-cp36m-linux_x86_64.whl"
 fi
 
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "omero-py==[0-9\.]*$" ; then
     echo "Install omero-py 5.6.* Python package"
-    $VENV_SERVER/pip install "omero-py>=5.6.0"
+    $VENV_BIN/pip install "omero-py>=5.6.0"
 fi
 
 PROFILE_APPEND="""# Python VENV

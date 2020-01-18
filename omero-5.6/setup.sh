@@ -277,7 +277,7 @@ fi
 
 OMERO_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
 ICE_HOME=/opt/$ICE_NAME
-PATH=/opt/$ICE_NAME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+PATH=$VENV_BIN:/opt/$ICE_NAME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
 LD_LIBRARY_PATH=/opt/$ICE_NAME/lib64:/opt/$ICE_NAME/lib
 export SLICEPATH=/opt/$ICE_NAME/slice
 """
@@ -329,28 +329,80 @@ if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "omero-we
     $VENV_BIN/pip install "omero-web>=5.6.1"
 fi
 
+if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "whitenoise==[0-9\.]*$" ; then
+    echo "Install whitenoise <4 Python package"
+    $VENV_BIN/pip install "whitenoise<4"
+fi
+
+omero config set omero.web.application_server wsgi-tcp
+omero config set omero.web.application_server.max_requests 500
+omero config set omero.web.wsgi_workers 9
+! omero config get omero.web.middleware | grep -qF "whitenoise.middleware.WhiteNoiseMiddleware" && omero config append omero.web.middleware '{"index": 0, "class": "whitenoise.middleware.WhiteNoiseMiddleware"}'
+
 #######################
 # NGINX for OMERO.web #
 #######################
 
-exit 0
 if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt -y install nginx
 fi
 
-omero config set omero.web.application_server wsgi-tcp
-
-NGINX_CONF_TMP="$OMERO_PATH/OMERO.server/nginx.conf.tmp"
 NGINX_CONF=/etc/nginx/sites-available/omero-web
 if [[ ! -f  "$NGINX_CONF" ]]; then
     echo "adding OMERO.web static files to NGINX"
-    omero web config nginx --http 80 > "$NGINX_CONF_TMP"
-    sudo cp "$NGINX_CONF_TMP" "$NGINX_CONF"
+    omero web config nginx --http 80 | sudo tee "$NGINX_CONF" > /dev/null
     sudo rm -f /etc/nginx/sites-enabled/default
     sudo ln -s "$NGINX_CONF" /etc/nginx/sites-enabled
+    sudo nginx -t
     sudo systemctl restart nginx
 fi
 
+############################
+# OMERO.web startup script #
+############################
+
+OMERO_WEB_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
+PATH=$VENV_BIN:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+"""
+
+sudo mkdir -p /etc/sysconfig
+if [[ ! -f /etc/sysconfig/omero-web ]] ; then
+    echo "creating OMERO.web service environmental variables"
+    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero-web > /dev/null
+fi
+
+OMERO_WEB_SERVICE_SCRIPT="""
+[Unit]
+Description=Start the OMERO Web
+After=syslog.target network.target omero@$(whoami).service
+
+[Service]
+User=$(whoami)
+Group=$(whoami)
+Type=oneshot
+EnvironmentFile=-/etc/sysconfig/omero-web
+ExecStart=$VENV_BIN/omero web start
+ExecStop=$VENV_BIN/omero web stop
+ExecReload=$VENV_BIN/omero web restart
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+OMERO_WEB_SERVICE="omero-web@$(whoami).service"
+if [[ ! -f "/etc/systemd/system/$OMERO_WEB_SERVICE" ]] ; then
+    echo "creating OMERO.web service"
+    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_WEB_SERVICE > /dev/null
+    sudo systemctl daemon-reload
+fi
+
+if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
+    echo "enabling OMERO.web systemd service"
+    sudo systemctl enable "omero-web@$(whoami)"
+    sudo systemctl start "omero-web@$(whoami)"
+fi
+exit 0
 ############################
 # Install N (Node.js, NPM) #
 ############################
@@ -497,52 +549,5 @@ omero config set omero.web.ome_seadragon.images_cache.port "$REDISPORT"
 omero config set omero.web.ome_seadragon.images_cache.database "$REDISDB"
 omero config set omero.web.ome_seadragon.images_cache.expire_time "$CACHE_EXPIRE_TIME"
 omero config set omero.web.ome_seadragon.repository "$OMERO_DATA_DIR"
-
-############################
-# OMERO.web startup script #
-############################
-
-OMERO_WEB_SERVICE_SCRIPT="""
-PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
-PYTHONPATH=$WEB_PLUGINS_PATH
-"""
-
-sudo mkdir -p /etc/sysconfig
-if [[ ! -f /etc/sysconfig/omero-web ]] ; then
-    echo "creating OMERO.web service environmental variables"
-    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero-web > /dev/null
-fi
-
-OMERO_WEB_SERVICE_SCRIPT="""
-[Unit]
-Description=Start the OMERO Web
-After=syslog.target network.target omero@$(whoami).service
-
-[Service]
-User=$(whoami)
-Group=$(whoami)
-Type=oneshot
-EnvironmentFile=-/etc/sysconfig/omero-web
-ExecStart=$OMERO_PATH/OMERO.server/bin/omero web start
-ExecStop=$OMERO_PATH/OMERO.server/bin/omero web stop
-ExecReload=$OMERO_PATH/OMERO.server/bin/omero web restart
-RemainAfterExit=true
-
-[Install]
-WantedBy=multi-user.target
-"""
-
-OMERO_WEB_SERVICE="omero-web@$(whoami).service"
-if [[ ! -f "/etc/systemd/system/$OMERO_WEB_SERVICE" ]] ; then
-    echo "creating OMERO.web service"
-    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_WEB_SERVICE > /dev/null
-    sudo systemctl daemon-reload
-fi
-
-if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
-    echo "enabling OMERO.web systemd service"
-    sudo systemctl enable "omero-web@$(whoami)"
-    sudo systemctl start "omero-web@$(whoami)"
-fi
 
 exit

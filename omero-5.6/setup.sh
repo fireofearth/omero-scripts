@@ -4,39 +4,32 @@ set -e
 
 echo "Running script as $(whoami)"
 
-OMERO_PATH=~/prog/omero
-OMERO_DATA_PATH=~/hdd/omero/data
-OMERO_INIT_PASS=Orionsbelt32
-
-ROOTPASS=$OMERO_INIT_PASS
-OMEROHOST=localhost
-OMEROPORT=4064
-
 HELP="""
-The AIM Install Script for OMERO.server + OMERO.web + OME Seadragon
-Installs everything(!) to a newly installed Ubuntu 18.04 computer with systemd. Directories / files will be directly modified or created by these apps:
+The AIM Install Script for OMERO.server + OMERO.web + AIMViewer
+Installs everything(!) to a newly installed Ubuntu 18.04 computer with systemd. Directories / files (not exclusive) will be directly modified or created by these apps:
 
-/opt/Ice-3.6.4              # Ice RPC framework
+/opt/Ice-3.6.5              # Ice RPC framework
 /etc/sysconfig              # environmental variables for startup scripts
 /etc/systemd/system         # add startup scripts
-~/.profile                  # modified PATH variable, etc
+~/.profile                  # modify PATH variable and add export program env variables
 ~/prog/n                    # the Node.js version manager
 ~/prog/omero/data           # data stored by OMERO.server
-~/prog/omero/OMERO.server
-~/prog/omero/OMERO.insight
-~/prog/omero/web_plugins/ome_seadragon
-~/.local/<python stuff>     # adds various local Python libraries
+~/prog/omero/OMERO.server   # OMERO.server files
+~/prog/omero/OMERO.insight  # OMERO.insight program
+~/prog/omero/venv_server    # python binaries for OMERO.server and OMERO.insight, including dependencies
+~/code/aimviewer            # AIMViewer app from OMERO.web
+~/omero/data                # data stored by OMERO.server (default location)
 
-It will install the programs:
+It will install these programs:
 
+Python3, Python3-venv, etc... (see script for details)
 OMERO.server:  the OMERO server
 OMERO.insight: the Java client for OMERO
-Ice:           RPC framework
+Ice:           RPC framework used by OMERO
 postgresql:    metadata for OMERO.server
-ome_seadragon: integration for OpenSlide and OMERO
-redis:         image cache for OME Seadragon
-nginx:         serves files for OMERO.web and plugins
-N:             Node.js + NPM version manager used for Grunt and other front-end compilation tasks
+Redis:         image cache for OME Seadragon
+Nginx:         serves files for OMERO.web and plugins
+N:             Node.js + NPM version manager used for front-end compilation tasks
 
 It will not repeat installation tasks already done previously so this script can be run multiple times for whatever reason.
 
@@ -44,8 +37,15 @@ It will not repeat installation tasks already done previously so this script can
 --deps      to update this machine and install all APT dependencies
 --pip       to pip install Python dependencies
 --npm       to npm install NPM dependencies
+--data-path path to OMERO.server data directory
 """
 
+OMERO_PATH=~/prog/omero
+OMEROHOST=localhost
+OMEROPORT=4064
+
+OMERO_INIT_PASS=
+OMERO_DATA_PATH=
 SHOULD_INSTALL=
 SHOULD_PIP_INSTALL=
 SHOULD_NPM_INSTALL=
@@ -61,9 +61,50 @@ while [[ $# -gt 0 ]] ; do
             SHOULD_PIP_INSTALL=1 ;;
         --npm)
             SHOULD_NPM_INSTALL=1 ;;
+        --data-path)
+            shift
+            if [[ $# -gt 0 ]] ; then
+                if [[ -z "${1%/*}" ]] || [[ "${1##*/}" != data ]] ; then
+                    echo "The subpath '${1%/*}' is not valid or path does not end with 'data'"
+                    exit 1
+                else
+                    OMERO_DATA_PATH=$1
+                fi
+            else
+                echo "No data path specified"
+                exit 1
+            fi
+        ;;
+        --omero-pass)
+            shift
+            if [[ $# -gt 0 ]] ; then
+                pattern="[\t ]"
+                if [[ ${#1} -lt 6 ]] || [[ "$1" =~ $pattern ]] ; then
+                    echo "'$1' is not a good password; should be > 5 characters"
+                    exit 1
+                else
+                    OMERO_INIT_PASS=$1
+                fi
+            else
+                echo "No password specified"
+                exit 1
+            fi
+            ;;
     esac
     shift
 done
+
+# set defaults if needed
+
+if [[ -z "$OMERO_DATA_PATH" ]] ; then
+    OMERO_DATA_PATH=~/omero/data
+fi
+
+if [[ -z "$OMERO_INIT_PASS" ]] ; then
+    OMERO_INIT_PASS=Orionsbelt32
+fi
+
+ROOTPASS=$OMERO_INIT_PASS
 
 #####################################
 # Dependencies APT for OMERO.server #
@@ -143,12 +184,13 @@ source ~/.profile
 #################################
 
 VENV_SERVER=$OMERO_PATH/venv_server
+VENV_BIN=$VENV_SERVER/bin
+
 if [[ ! -d "$VENV_SERVER" ]]; then
     echo "set Python VENV for OMERO"
     python3 -m venv $VENV_SERVER
 fi
 
-VENV_BIN=$VENV_SERVER/bin
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "zeroc-ice==[0-9\.]*$" ; then
     echo "Install zeroc-ice 3.6.* Python package"
     $VENV_BIN/pip install "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/zeroc_ice-3.6.5-cp36-cp36m-linux_x86_64.whl"
@@ -236,6 +278,7 @@ fi
 # Add executables to PATH #
 ###########################
 
+# TODO: binaries are no longer stored in OMERO_INSIGHT_BIN; can remove
 PROFILE_APPEND="""# OMERO binary paths
 OMERO_SERVER_BIN=$OMERO_SERVER_SYMLINK/bin
 OMERO_INSIGHT_BIN=$OMERO_INSIGHT_SYMLINK/bin
@@ -336,7 +379,8 @@ fi
 
 omero config set omero.web.application_server wsgi-tcp
 omero config set omero.web.application_server.max_requests 500
-omero config set omero.web.wsgi_workers 9
+omero config set omero.web.wsgi_workers 13
+omero config set omero.web.debug
 ! omero config get omero.web.middleware | grep -qF "whitenoise.middleware.WhiteNoiseMiddleware" && omero config append omero.web.middleware '{"index": 0, "class": "whitenoise.middleware.WhiteNoiseMiddleware"}'
 
 #######################
@@ -402,7 +446,7 @@ if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
     sudo systemctl enable "omero-web@$(whoami)"
     sudo systemctl start "omero-web@$(whoami)"
 fi
-exit 0
+
 ############################
 # Install N (Node.js, NPM) #
 ############################
@@ -426,128 +470,27 @@ if ! grep -qxF "N_BIN=$HOME/prog/n/bin" ~/.profile ; then
 fi
 source ~/.profile
 
-#####################
-# OMERO Web plugins #
-#####################
+########################
+# AIMViewer Django app #
+########################
 
-echo "set up OMERO.web plugins path"
-WEB_PLUGINS_PATH="$OMERO_PATH/web_plugins"
-mkdir -p "$WEB_PLUGINS_PATH"
-PROFILE_APPEND="""
-# OMERO web plugins path
-WEB_PLUGINS_PATH=$WEB_PLUGINS_PATH
-export PYTHONPATH+=:\$WEB_PLUGINS_PATH
-"""
-if ! grep -qxF "export PYTHONPATH+=:\$WEB_PLUGINS_PATH" ~/.profile ; then
-    echo "$PROFILE_APPEND" >> ~/.profile
-fi
-source ~/.profile
-if [[ -n "$SHOULD_NPM_INSTALL" ]] ; then
-    npm install -g grunt
-fi
-
-######################################
-# Install OME Seadragon dependencies #
-######################################
-
-# Redis is key/value store and is used for image caching
-
-if [[ -n "$SHOULD_INSTALL" ]]; then
-    sudo apt install -y redis
-    sudo apt install -y openslide-tools
-fi
-
-####################################
-# Download and setup OME Seadragon #
-####################################
-
-OME_SEADRAGON_VERSION=0.6.16
-OME_SEADRAGON_PATH="$WEB_PLUGINS_PATH/ome_seadragon"
-OME_SEADRAGON_ZIP=~/"v${OME_SEADRAGON_VERSION}.zip"
-if [[ ! -d "$OME_SEADRAGON_PATH" ]] ; then
-    echo "downloading OME Seadragon plugin"
-    if [[ ! -f "$OME_SEADRAGON_ZIP" ]] ; then
-        wget -P ~/ "https://github.com/crs4/ome_seadragon/archive/v${OME_SEADRAGON_VERSION}.zip"
-    fi
-    unzip "$OME_SEADRAGON_ZIP" -d "$WEB_PLUGINS_PATH"
-    mv "$WEB_PLUGINS_PATH/ome_seadragon"{-${OME_SEADRAGON_VERSION},}
-fi
-
-if [[ -n "$SHOULD_PIP_INSTALL" ]] ; then
-    pip install -r "$OME_SEADRAGON_PATH/requirements.txt"
-fi
-
-cd "$OME_SEADRAGON_PATH"
-if [[ -n "$SHOULD_NPM_INSTALL" ]] ; then
+AIMVEWER_PATH=~/code/aimviewer
+if [[ ! -d "$AIMVEWER_PATH" ]] ; then
+    echo "installing AIMViewer"
+    mkdir -p ~/code
+    git clone "https://github.com/fireofearth/aimviewer.git"
+    cd "$AIMVEWER_PATH/frontend/annotator"
     npm install
+    # requires HTML folder to not be in static dir
+    npm run build
+    $VENV_BIN/pip install -e "$AIMVIEWER_PATH"
+    cd
 fi
-grunt
-cd
 
-! omero config get omero.web.apps | grep -qF "\"ome_seadragon\"" && omero config append omero.web.apps '"ome_seadragon"'
-omero config set omero.web.session_cookie_name ome_seadragon_web
+! omero config get omero.web.apps | grep -qF "\"aimviewer\"" && omero config append omero.web.apps '"aimviewer"'
+if ! omero config get omero.web.open_with | grep -qF "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]" ; then
+    omero config append omero.web.open_with "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
+fi
+omero config set omero.web.viewer.view aimviewer.views.main_annotator
 
-#######################
-# Enable CORS headers #
-#######################
-
-echo "setting the corsheaders Django middleware in OMERO.web"
-! omero config get omero.web.apps | grep -qF "\"corsheaders\"" && omero config append omero.web.apps '"corsheaders"'
-CORS_MIDDLEWARE='{"index": 0.5, "class": "corsheaders.middleware.CorsMiddleware"}'
-! omero config get omero omero.web.middleware | grep -qF "\"$CORS_MIDDLEWARE\"" && omero config append omero.web.middleware "$CORS_MIDDLEWARE"
-CORS_POST_CSF_MIDDLEWARE='{"index": 10, "class": "corsheaders.middleware.CorsPostCsrfMiddleware"}'
-omero config get omero.web.middleware | grep -qF "\"$CORS_POST_CSF_MIDDLEWARE\"" && omero config append omero.web.middleware "$CORS_POST_CSF_MIDDLEWARE"
-
-echo "no CORS whitelist, ALLOWING ALL HOSTS"
-omero config set omero.web.cors_origin_allow_all True
-
-################################################
-# Create a OMERO public user for OME Seadragon #
-################################################
-
-
-echo "creating user group for OME Seadragon"
-omero group add --ignore-existing --server "$OMEROHOST" \
-    --port "$OMEROPORT" \
-    --user root \
-    --password "$ROOTPASS" \
-    --type read-annotate "$AIM_GROUP"
-
-echo "Creating PathViewer public user"
-omero user add --ignore-existing --server "$OMEROHOST" \
-    --port "$OMEROPORT" \
-    --user root \
-    --password "$ROOTPASS" \
-    "$AIM_PUBLIC_USER_NAME" AIM PUBLIC \
-    --group-name "$AIM_GROUP" \
-    --userpassword "$AIM_PUBLIC_USER_PASS"
-
-echo "Setup OMERO public user in omero.web.public settings"
-URL_FILTER="^/ome_seadragon"
-omero config set omero.web.public.enabled True
-omero config set omero.web.public.user "$AIM_PUBLIC_USER_NAME"
-omero config set omero.web.public.password "$AIM_PUBLIC_USER_PASS"
-omero config set omero.web.public.url_filter "$URL_FILTER"
-omero config set omero.web.public.server_id 1
-echo "Setup OMERO public user in omero.web.ome_seadragon settings"
-omero config set omero.web.ome_seadragon.ome_public_user "$AIM_PUBLIC_USER_NAME"
-
-##########################################
-# Setup Redis image cache and repository #
-##########################################
-
-REDISHOST=localhost
-REDISPORT=6379
-REDISDB=0
-CACHE_EXPIRE_TIME='{"hours": 8}'
-
-echo "Setup REDIS cache in omero.web.ome_seadragon settings"
-omero config set omero.web.ome_seadragon.images_cache.cache_enabled True
-omero config set omero.web.ome_seadragon.images_cache.driver 'redis'
-omero config set omero.web.ome_seadragon.images_cache.host "$REDISHOST"
-omero config set omero.web.ome_seadragon.images_cache.port "$REDISPORT"
-omero config set omero.web.ome_seadragon.images_cache.database "$REDISDB"
-omero config set omero.web.ome_seadragon.images_cache.expire_time "$CACHE_EXPIRE_TIME"
-omero config set omero.web.ome_seadragon.repository "$OMERO_DATA_DIR"
-
-exit
+# TODO: set up cache, users, public user, and other web app variables

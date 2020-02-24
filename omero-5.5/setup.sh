@@ -117,7 +117,7 @@ export PGPASSWORD=\$OMERO_DB_PASS
 # OMERO AIM Users
 AIM_GROUP=aim_data
 AIM_PUBLIC_USER_NAME=aim_public
-AIM_PUBLIC_USER_PASS=$OMERO_INIT_PASS
+AIM_PUBLIC_USER_PASS=Orionseblt32
 
 # Ice settings
 export ICE_HOME=/opt/Ice-3.6.4
@@ -404,15 +404,14 @@ omero config set omero.web.cors_origin_allow_all True
 # Create a OMERO public user for OME Seadragon #
 ################################################
 
-
-echo "creating user group for OME Seadragon"
+echo "creating 'aim_data' AIM user group"
 omero group add --ignore-existing --server "$OMEROHOST" \
     --port "$OMEROPORT" \
     --user root \
     --password "$ROOTPASS" \
     --type read-annotate "$AIM_GROUP"
 
-echo "Creating PathViewer public user"
+echo "creating 'aim_public' AIMViewer public user"
 omero user add --ignore-existing --server "$OMEROHOST" \
     --port "$OMEROPORT" \
     --user root \
@@ -420,6 +419,8 @@ omero user add --ignore-existing --server "$OMEROHOST" \
     "$AIM_PUBLIC_USER_NAME" AIM PUBLIC \
     --group-name "$AIM_GROUP" \
     --userpassword "$AIM_PUBLIC_USER_PASS"
+
+
 
 echo "Setup OMERO public user in omero.web.public settings"
 URL_FILTER="^/ome_seadragon"

@@ -32,12 +32,16 @@ Nginx:         serves files for OMERO.web and plugins
 N:             Node.js + NPM version manager used for front-end compilation tasks
 
 It will not repeat installation tasks already done previously so this script can be run multiple times for whatever reason.
+Commandline arguments:
 
---help, -h  show this help message and quit
---deps      to update this machine and install all APT dependencies
---pip       to pip install Python dependencies
---npm       to npm install NPM dependencies
---data-path path to OMERO.server data directory
+--help, -h   show this help message and quit
+--deps       (optional) to update this machine and install all APT dependencies
+--pip        (optional) to pip install Python dependencies
+--npm        (optional) to npm install NPM dependencies
+--data-path  (optional) path to OMERO.server data directory (default: ~/omero/data)
+--omero-pass (optional) OMERO.server root password. Please use this for production servers (default: Orionsbelt32)
+
+File arguments: groups and users specified in the header included CSV files ./group_list.csv and ./user_list.csv will be added to OMERO.server. Please set user passwords in production servers.
 """
 
 OMERO_PATH=~/prog/omero
@@ -106,6 +110,9 @@ fi
 
 ROOTPASS=$OMERO_INIT_PASS
 
+# if need second run, then make sure variables here are exported
+source ~/.profile
+
 #####################################
 # Dependencies APT for OMERO.server #
 #####################################
@@ -160,11 +167,7 @@ OMERO_ROOT_PASS=$OMERO_INIT_PASS
 OMERO_DATA_DIR=$OMERO_DATA_PATH
 export OMERO_DB_USER OMERO_DB_PASS OMERO_DB_NAME OMERO_ROOT_PASS OMERO_DATA_DIR
 export PGPASSWORD=\$OMERO_DB_PASS
-
-# OMERO AIM Users
-AIM_GROUP=aim_data
-AIM_PUBLIC_USER_NAME=aim_public
-AIM_PUBLIC_USER_PASS=$OMERO_INIT_PASS
+export OMERODIR=$OMERO_PATH/OMERO.server
 
 # Ice settings
 export ICE_HOME=/opt/$ICE_NAME
@@ -215,7 +218,20 @@ source ~/.profile
 # set up Postgres #
 ###################
 
+create_postgres_database () {
+    if [[ $# -ne 1 ]]; then
+        echo "Bad parameter for create_postgres_database"
+        exit 1
+    fi
+    dbname=$1
+    if ! psql -lqt | cut -d \| -f 1 | grep -qw "$dbname"; then
+        echo "create Postgres database $dbname"
+        sudo -u postgres createdb -E UTF8 -O $OMERO_DB_USER $dbname
+    fi
+}
+
 # TODO: this is outdated: should install PostgreSQL 11 for better performance
+# TODO: set role attributes so don't have to use sudo
 # Postgres 10 still works fine though
 
 if ! systemctl is-active --quiet postgresql ; then
@@ -227,13 +243,8 @@ if ! sudo -u postgres psql -tc '\du' | cut -d \| -f 1 | grep -qw "$OMERO_DB_USER
     echo "CREATE USER $OMERO_DB_USER PASSWORD '$OMERO_DB_PASS'" | sudo -u postgres psql
 fi
 
-if ! psql -lqt | cut -d \| -f 1 | grep -qw "$OMERO_DB_NAME"; then
-    sudo -u postgres createdb -E UTF8 -O $OMERO_DB_USER $OMERO_DB_NAME
-fi
-
-if ! psql -lqt | cut -d \| -f 1 | grep -qw "$OMERO_DB_USER"; then
-    sudo -u postgres createdb -E UTF8 -O $OMERO_DB_USER $OMERO_DB_USER
-fi
+create_postgres_database $OMERO_DB_USER
+create_postgres_database $OMERO_DB_NAME
 
 # create path for OMERO installation #
 
@@ -283,7 +294,6 @@ PROFILE_APPEND="""# OMERO binary paths
 OMERO_SERVER_BIN=$OMERO_SERVER_SYMLINK/bin
 OMERO_INSIGHT_BIN=$OMERO_INSIGHT_SYMLINK/bin
 PATH+=:\$OMERO_INSIGHT_BIN:\$OMERO_SERVER_BIN
-export OMERODIR=$OMERO_SERVER_SYMLINK
 """
 
 if ! grep -qxF "OMERO_SERVER_BIN=$OMERO_PATH/OMERO.server/bin" ~/.profile ; then
@@ -377,6 +387,7 @@ if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "whitenoi
     $VENV_BIN/pip install "whitenoise<4"
 fi
 
+echo "OMERO.web DB config"
 omero config set omero.web.application_server wsgi-tcp
 omero config set omero.web.application_server.max_requests 500
 omero config set omero.web.wsgi_workers 13
@@ -388,6 +399,7 @@ omero config set omero.web.debug
 #######################
 
 if [[ -n "$SHOULD_INSTALL" ]]; then
+    echo "APT install Nginx"
     sudo apt -y install nginx
 fi
 
@@ -460,25 +472,18 @@ if [[ ! -d ~/prog/n ]] ; then
     curl -L "https://git.io/n-install" | N_PREFIX=~/prog/n bash
 fi
 
-PROFILE_APPEND="""
-# N binary path
-N_BIN=$HOME/prog/n/bin
-PATH+=:\$N_BIN
-"""
-if ! grep -qxF "N_BIN=$HOME/prog/n/bin" ~/.profile ; then
-    echo "$PROFILE_APPEND" >> ~/.profile
-fi
+# PATH and N_PREFIX is already added to ~/.bashrc
 source ~/.profile
 
-########################
-# AIMViewer Django app #
-########################
+##############################
+# Setup AIMViewer Django app #
+##############################
 
 AIMVEWER_PATH=~/code/aimviewer
 if [[ ! -d "$AIMVEWER_PATH" ]] ; then
     echo "installing AIMViewer"
     mkdir -p ~/code
-    git clone "https://github.com/fireofearth/aimviewer.git"
+    git clone "https://github.com/fireofearth/aimviewer.git" $AIMVEWER_PATH
     cd "$AIMVEWER_PATH/frontend/annotator"
     npm install
     # requires HTML folder to not be in static dir
@@ -487,10 +492,76 @@ if [[ ! -d "$AIMVEWER_PATH" ]] ; then
     cd
 fi
 
+create_postgres_database 'aimviewer'
+create_postgres_database 'aimviewer_test'
+
 ! omero config get omero.web.apps | grep -qF "\"aimviewer\"" && omero config append omero.web.apps '"aimviewer"'
 if ! omero config get omero.web.open_with | grep -qF "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]" ; then
     omero config append omero.web.open_with "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
 fi
 omero config set omero.web.viewer.view aimviewer.views.main_annotator
+
+########################################
+# Add groups and users to OMERO.server #
+########################################
+
+add_omero_group () {
+    if [[ $# -ne 2 ]] ; then
+        echo "incorrect number of OMERO user attributes"
+        exit 1
+    fi
+    group_name=$1
+    type=$2
+    echo "creating '$group_name' AIM user group"
+    omero group add --ignore-existing --server "$OMEROHOST" \
+        --port "$OMEROPORT" \
+        --user root \
+        --password "$ROOTPASS" \
+        --type "$type" \
+        "$group_name"
+}
+
+add_omero_user () {
+    if [[ $# -ne 5 ]] ; then
+        echo "incorrect number of OMERO user attributes"
+        exit 1
+    fi
+    username=$1
+    first_name=$2
+    last_name=$3
+    group_name=$4
+    password=$5
+    echo "creating '$username' AIMViewer user"
+    omero user add --ignore-existing --server "$OMEROHOST" \
+        --port "$OMEROPORT" \
+        --user root \
+        --password "$ROOTPASS" \
+        "$username" "$first_name" "$last_name" \
+        --group-name "$group_name" \
+        --userpassword "$password"
+}
+
+sed '1d' group_list.csv | while IFS=, read -r group_name type; do
+    add_omero_group $group_name $type
+done
+
+sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group_name password; do
+    add_omero_user $username $first_name $last_name $group_name $password
+done
+
+exit
+
+
+# TODO: ice.config
+
+'''omero.host=localhost
+omero.port=4064
+omero.rootpass=
+omero.user=aim_test
+omero.pass=
+omero.web.debug=True
+'''
+
+# TODO: config.yaml
 
 # TODO: set up cache, users, public user, and other web app variables

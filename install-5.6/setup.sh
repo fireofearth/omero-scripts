@@ -122,7 +122,7 @@ if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt -y upgrade
     sudo apt -y install unzip bc wget cron git curl
     # build tools and dependencies
-    sudo apt -y install build-essential openjdk-11-jdk python3 python3-venv
+    sudo apt -y install build-essential openjdk-11-jdk python3 python3-venv python3-dev
     # dependencies for Ice
     sudo apt -y install db5.3-util libbz2-dev libdb++-dev libdb-dev libexpat-dev libmcpp-dev libssl-dev mcpp zlib1g-dev
     # dependency postgresql
@@ -194,15 +194,21 @@ if [[ ! -d "$VENV_SERVER" ]]; then
     python3 -m venv $VENV_SERVER
 fi
 
+install_python_package () {
+    PACKAGE_STR="$1"
+    PACKAGE_NAME="$(echo "$PACKAGE_STR" | sed -r -e 's/^((\w|-|\.)+)([=<>]{1,2}[0-9\.]+)?$/\1/')"
+    if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "${PACKAGE_NAME}==[0-9\.]*$" ; then
+        echo "Install $PACKAGE_STR Python package"
+        $VENV_BIN/pip install "$PACKAGE_STR"
+    fi
+}
+
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "zeroc-ice==[0-9\.]*$" ; then
     echo "Install zeroc-ice 3.6.* Python package"
     $VENV_BIN/pip install "https://github.com/ome/zeroc-ice-ubuntu1804/releases/download/0.3.0/zeroc_ice-3.6.5-cp36-cp36m-linux_x86_64.whl"
 fi
 
-if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "omero-py==[0-9\.]*$" ; then
-    echo "Install omero-py 5.6.* Python package"
-    $VENV_BIN/pip install "omero-py>=5.6.0"
-fi
+install_python_package "omero-py>=5.6.0"
 
 PROFILE_APPEND="""# Python VENV
 VENV_SERVER=$VENV_SERVER
@@ -377,22 +383,28 @@ fi
 # Install OMERO.web #
 #####################
 
-if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "omero-web==[0-9\.]*$" ; then
-    echo "Install omero-web 5.6.* Python package"
-    $VENV_BIN/pip install "omero-web>=5.6.1"
-fi
+omero_config_append () {
+    if ! omero config get "$1" | grep -qF "$2" ; then
+        omero config append "$1" "$2"
+    fi
+}
 
-if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -qx "whitenoise==[0-9\.]*$" ; then
-    echo "Install whitenoise <4 Python package"
-    $VENV_BIN/pip install "whitenoise<4"
-fi
+install_python_package "omero-web>=5.6.1"
+install_python_package "whitenoise<4"
+install_python_package "django-cors-headers"
 
 echo "OMERO.web DB config"
+echo "    application variables"
 omero config set omero.web.application_server wsgi-tcp
 omero config set omero.web.application_server.max_requests 500
 omero config set omero.web.wsgi_workers 13
 omero config set omero.web.debug
-! omero config get omero.web.middleware | grep -qF "whitenoise.middleware.WhiteNoiseMiddleware" && omero config append omero.web.middleware '{"index": 0, "class": "whitenoise.middleware.WhiteNoiseMiddleware"}'
+omero_config_append "omero.web.middleware" '{"index": 0, "class": "whitenoise.middleware.WhiteNoiseMiddleware"}'
+
+echo "    CORS variables"
+omero_config_append "omero.web.apps" "\"corsheaders\""
+omero_config_append "omero.web.middleware" '{"index": 0.5, "class": "corsheaders.middleware.CorsMiddleware"}'
+omero_config_append "omero.web.middleware" '{"index": 10, "class": "corsheaders.middleware.CorsPostCsrfMiddleware"}'
 
 #######################
 # NGINX for OMERO.web #
@@ -479,6 +491,11 @@ source ~/.profile
 # Setup AIMViewer Django app #
 ##############################
 
+if [[ -n "$SHOULD_INSTALL" ]]; then
+    echo "APT install libpq-dev"
+    sudo apt -y install libpq-dev
+fi
+
 AIMVEWER_PATH=~/code/aimviewer
 if [[ ! -d "$AIMVEWER_PATH" ]] ; then
     echo "installing AIMViewer"
@@ -495,11 +512,10 @@ fi
 create_postgres_database 'aimviewer'
 create_postgres_database 'aimviewer_test'
 
-! omero config get omero.web.apps | grep -qF "\"aimviewer\"" && omero config append omero.web.apps '"aimviewer"'
-if ! omero config get omero.web.open_with | grep -qF "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]" ; then
-    omero config append omero.web.open_with "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
-fi
+omero_config_append "omero.web.apps" "\"aimviewer\""
+omero_config_append "omero.web.open_with" "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
 omero config set omero.web.viewer.view aimviewer.views.main_annotator
+omero config set omero.web.django_additional_settings '["ASGI_APPLICATION", "aimviewer.routing.application"]]''
 
 ########################################
 # Add groups and users to OMERO.server #

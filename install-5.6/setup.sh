@@ -330,55 +330,6 @@ if [[ ! -f "$DB_CREATION_SCRIPT" ]] ; then
     psql -h localhost -U "$OMERO_DB_USER" "$OMERO_DB_NAME" < "$DB_CREATION_SCRIPT"
 fi
 
-###############################
-# OMERO.server startup script #
-###############################
-
-OMERO_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
-ICE_HOME=/opt/$ICE_NAME
-PATH=$VENV_BIN:/opt/$ICE_NAME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
-LD_LIBRARY_PATH=/opt/$ICE_NAME/lib64:/opt/$ICE_NAME/lib
-export SLICEPATH=/opt/$ICE_NAME/slice
-"""
-
-sudo mkdir -p /etc/sysconfig
-if [[ ! -f /etc/sysconfig/omero ]] ; then
-    echo "Set up OMERO.server EnvironmentFile"
-    echo "$OMERO_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero > /dev/null
-fi
-
-OMERO_SERVER_SERVICE_SCRIPT="""
-[Unit]
-Description=Start the OMERO Server
-After=syslog.target network.target
-
-[Service]
-User=$(whoami)
-Group=$(whoami)
-Type=oneshot
-EnvironmentFile=-/etc/sysconfig/omero
-ExecStart=$VENV_BIN/omero admin start
-ExecStop=$VENV_BIN/omero admin stop
-ExecReload=$VENV_BIN/omero admin restart
-RemainAfterExit=true
-
-[Install]
-WantedBy=multi-user.target
-"""
-
-OMERO_SERVICE="omero@$(whoami).service"
-if [[ ! -f "/etc/systemd/system/$OMERO_SERVICE" ]] ; then
-    echo "Set up OMERO.server Systemd service"
-    echo "$OMERO_SERVER_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_SERVICE > /dev/null
-    sudo systemctl daemon-reload
-fi
-
-if ! systemctl is-active --quiet "omero@$(whoami)" ; then
-    echo "Enable OMERO.server in Systemd"
-    sudo systemctl enable "omero@$(whoami)"
-    sudo systemctl start "omero@$(whoami)"
-fi
-
 #####################
 # Install OMERO.web #
 #####################
@@ -484,16 +435,15 @@ if [[ ! -d ~/prog/n ]] ; then
     curl -L "https://git.io/n-install" | N_PREFIX=~/prog/n bash
 fi
 
-# PATH and N_PREFIX is already added to ~/.bashrc
-source ~/.profile
+source ~/.bashrc
 
 ##############################
 # Setup AIMViewer Django app #
 ##############################
 
 if [[ -n "$SHOULD_INSTALL" ]]; then
-    echo "APT install libpq-dev"
-    sudo apt -y install libpq-dev
+    echo "APT install libpq-dev and openslide-tools"
+    sudo apt -y install libpq-dev openslide-tools
 fi
 
 AIMVEWER_PATH=~/code/aimviewer
@@ -515,7 +465,7 @@ create_postgres_database 'aimviewer_test'
 omero_config_append "omero.web.apps" "\"aimviewer\""
 omero_config_append "omero.web.open_with" "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
 omero config set omero.web.viewer.view aimviewer.views.main_annotator
-omero config set omero.web.django_additional_settings '["ASGI_APPLICATION", "aimviewer.routing.application"]]''
+omero config set omero.web.django_additional_settings '["ASGI_APPLICATION", "aimviewer.routing.application"]]'
 
 ########################################
 # Add groups and users to OMERO.server #
@@ -565,8 +515,54 @@ sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group
     add_omero_user $username $first_name $last_name $group_name $password
 done
 
-exit
+###############################
+# OMERO.server startup script #
+###############################
 
+OMERO_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
+ICE_HOME=/opt/$ICE_NAME
+PATH=$VENV_BIN:/opt/$ICE_NAME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+LD_LIBRARY_PATH=/opt/$ICE_NAME/lib64:/opt/$ICE_NAME/lib
+export SLICEPATH=/opt/$ICE_NAME/slice
+"""
+
+sudo mkdir -p /etc/sysconfig
+if [[ ! -f /etc/sysconfig/omero ]] ; then
+    echo "Set up OMERO.server EnvironmentFile"
+    echo "$OMERO_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero > /dev/null
+fi
+
+OMERO_SERVER_SERVICE_SCRIPT="""
+[Unit]
+Description=Start the OMERO Server
+After=syslog.target network.target
+
+[Service]
+User=$(whoami)
+Group=$(whoami)
+Type=oneshot
+EnvironmentFile=-/etc/sysconfig/omero
+ExecStart=$VENV_BIN/omero admin start
+ExecStop=$VENV_BIN/omero admin stop
+ExecReload=$VENV_BIN/omero admin restart
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+OMERO_SERVICE="omero@$(whoami).service"
+if [[ ! -f "/etc/systemd/system/$OMERO_SERVICE" ]] ; then
+    echo "Set up OMERO.server Systemd service"
+    echo "$OMERO_SERVER_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_SERVICE > /dev/null
+    sudo systemctl daemon-reload
+fi
+
+if ! systemctl is-active --quiet "omero@$(whoami)" ; then
+    echo "Enable OMERO.server in Systemd"
+    sudo systemctl enable "omero@$(whoami)"
+    sudo systemctl start "omero@$(whoami)"
+fi
 
 # TODO: ice.config
 

@@ -128,7 +128,7 @@ if [[ -n "$SHOULD_INSTALL" ]]; then
     # dependency postgresql
     # TODO: this is outdated: should install PostgreSQL 11
     sudo apt -y install postgresql
-    sudo apt autoremove
+    sudo apt -y autoremove
 fi
 
 #####################
@@ -330,6 +330,55 @@ if [[ ! -f "$DB_CREATION_SCRIPT" ]] ; then
     psql -h localhost -U "$OMERO_DB_USER" "$OMERO_DB_NAME" < "$DB_CREATION_SCRIPT"
 fi
 
+###############################
+# OMERO.server startup script #
+###############################
+
+OMERO_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
+ICE_HOME=/opt/$ICE_NAME
+PATH=$VENV_BIN:/opt/$ICE_NAME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+LD_LIBRARY_PATH=/opt/$ICE_NAME/lib64:/opt/$ICE_NAME/lib
+export SLICEPATH=/opt/$ICE_NAME/slice
+"""
+
+sudo mkdir -p /etc/sysconfig
+if [[ ! -f /etc/sysconfig/omero ]] ; then
+    echo "Set up OMERO.server EnvironmentFile"
+    echo "$OMERO_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero > /dev/null
+fi
+
+OMERO_SERVER_SERVICE_SCRIPT="""
+[Unit]
+Description=Start the OMERO Server
+After=syslog.target network.target
+
+[Service]
+User=$(whoami)
+Group=$(whoami)
+Type=oneshot
+EnvironmentFile=-/etc/sysconfig/omero
+ExecStart=$VENV_BIN/omero admin start
+ExecStop=$VENV_BIN/omero admin stop
+ExecReload=$VENV_BIN/omero admin restart
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+OMERO_SERVICE="omero@$(whoami).service"
+if [[ ! -f "/etc/systemd/system/$OMERO_SERVICE" ]] ; then
+    echo "Set up OMERO.server Systemd service"
+    echo "$OMERO_SERVER_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_SERVICE > /dev/null
+    sudo systemctl daemon-reload
+fi
+
+if ! systemctl is-active --quiet "omero@$(whoami)" ; then
+    echo "Enable OMERO.server in Systemd"
+    sudo systemctl enable "omero@$(whoami)"
+    sudo systemctl start "omero@$(whoami)"
+fi
+
 #####################
 # Install OMERO.web #
 #####################
@@ -377,52 +426,6 @@ if [[ ! -f  "$NGINX_CONF" ]]; then
 fi
 
 ############################
-# OMERO.web startup script #
-############################
-
-OMERO_WEB_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
-PATH=$VENV_BIN:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
-"""
-
-sudo mkdir -p /etc/sysconfig
-if [[ ! -f /etc/sysconfig/omero-web ]] ; then
-    echo "creating OMERO.web service environmental variables"
-    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero-web > /dev/null
-fi
-
-OMERO_WEB_SERVICE_SCRIPT="""
-[Unit]
-Description=Start the OMERO Web
-After=syslog.target network.target omero@$(whoami).service
-
-[Service]
-User=$(whoami)
-Group=$(whoami)
-Type=oneshot
-EnvironmentFile=-/etc/sysconfig/omero-web
-ExecStart=$VENV_BIN/omero web start
-ExecStop=$VENV_BIN/omero web stop
-ExecReload=$VENV_BIN/omero web restart
-RemainAfterExit=true
-
-[Install]
-WantedBy=multi-user.target
-"""
-
-OMERO_WEB_SERVICE="omero-web@$(whoami).service"
-if [[ ! -f "/etc/systemd/system/$OMERO_WEB_SERVICE" ]] ; then
-    echo "creating OMERO.web service"
-    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_WEB_SERVICE > /dev/null
-    sudo systemctl daemon-reload
-fi
-
-if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
-    echo "enabling OMERO.web systemd service"
-    sudo systemctl enable "omero-web@$(whoami)"
-    sudo systemctl start "omero-web@$(whoami)"
-fi
-
-############################
 # Install N (Node.js, NPM) #
 ############################
 
@@ -435,7 +438,7 @@ if [[ ! -d ~/prog/n ]] ; then
     curl -L "https://git.io/n-install" | N_PREFIX=~/prog/n bash
 fi
 
-source ~/.bashrc
+source ~/.profile
 
 ##############################
 # Setup AIMViewer Django app #
@@ -515,53 +518,50 @@ sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group
     add_omero_user $username $first_name $last_name $group_name $password
 done
 
-###############################
-# OMERO.server startup script #
-###############################
+############################
+# OMERO.web startup script #
+############################
 
-OMERO_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
-ICE_HOME=/opt/$ICE_NAME
-PATH=$VENV_BIN:/opt/$ICE_NAME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
-LD_LIBRARY_PATH=/opt/$ICE_NAME/lib64:/opt/$ICE_NAME/lib
-export SLICEPATH=/opt/$ICE_NAME/slice
+OMERO_WEB_SERVICE_SCRIPT="""OMERODIR=$OMERO_SERVER_SYMLINK
+PATH=$VENV_BIN:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 """
 
 sudo mkdir -p /etc/sysconfig
-if [[ ! -f /etc/sysconfig/omero ]] ; then
-    echo "Set up OMERO.server EnvironmentFile"
-    echo "$OMERO_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero > /dev/null
+if [[ ! -f /etc/sysconfig/omero-web ]] ; then
+    echo "creating OMERO.web service environmental variables"
+    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/sysconfig/omero-web > /dev/null
 fi
 
-OMERO_SERVER_SERVICE_SCRIPT="""
+OMERO_WEB_SERVICE_SCRIPT="""
 [Unit]
-Description=Start the OMERO Server
-After=syslog.target network.target
+Description=Start the OMERO Web
+After=syslog.target network.target omero@$(whoami).service
 
 [Service]
 User=$(whoami)
 Group=$(whoami)
 Type=oneshot
-EnvironmentFile=-/etc/sysconfig/omero
-ExecStart=$VENV_BIN/omero admin start
-ExecStop=$VENV_BIN/omero admin stop
-ExecReload=$VENV_BIN/omero admin restart
+EnvironmentFile=-/etc/sysconfig/omero-web
+ExecStart=$VENV_BIN/omero web start
+ExecStop=$VENV_BIN/omero web stop
+ExecReload=$VENV_BIN/omero web restart
 RemainAfterExit=true
 
 [Install]
 WantedBy=multi-user.target
 """
 
-OMERO_SERVICE="omero@$(whoami).service"
-if [[ ! -f "/etc/systemd/system/$OMERO_SERVICE" ]] ; then
-    echo "Set up OMERO.server Systemd service"
-    echo "$OMERO_SERVER_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_SERVICE > /dev/null
+OMERO_WEB_SERVICE="omero-web@$(whoami).service"
+if [[ ! -f "/etc/systemd/system/$OMERO_WEB_SERVICE" ]] ; then
+    echo "creating OMERO.web service"
+    echo "$OMERO_WEB_SERVICE_SCRIPT" | sudo tee /etc/systemd/system/$OMERO_WEB_SERVICE > /dev/null
     sudo systemctl daemon-reload
 fi
 
-if ! systemctl is-active --quiet "omero@$(whoami)" ; then
-    echo "Enable OMERO.server in Systemd"
-    sudo systemctl enable "omero@$(whoami)"
-    sudo systemctl start "omero@$(whoami)"
+if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
+    echo "enabling OMERO.web systemd service"
+    sudo systemctl enable "omero-web@$(whoami)"
+    sudo systemctl start "omero-web@$(whoami)"
 fi
 
 # TODO: ice.config

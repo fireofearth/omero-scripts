@@ -1,0 +1,58 @@
+production:
+  DB:
+    USER: {{USER}}
+    NAME: aimviewer
+    PORT: 5432
+  OMERO:
+    HOST: localhost
+    SERVER_PORT: 4064
+    WEB_PORT: 8081
+    NAMESPACE: aimviewer
+    GROUP: 'aim_data'
+    GROUP_ID: 3
+
+development:
+  DB:
+    USER: {{USER}}
+    NAME: aimviewer
+    PORT: 5432
+  OMERO:
+    HOST: localhost
+    SERVER_PORT: 4064
+    WEB_PORT: 4080
+    NAMESPACE: aimviewer
+    GROUP: 'aim_data'
+    GROUP_ID: 3
+
+testing:
+  DB:
+    USER: {{USER}}
+    NAME: aimviewer_test
+    PORT: 5432
+  OMERO:
+    HOST: localhost
+    SERVER_PORT: 4064
+    WEB_PORT: 4080
+    NAMESPACE: aimviewer_test
+    USERNAME: aim_test
+    USER_ID: 4
+    GROUP: aim_test_data
+    GROUP_ID: 4
+    PASSWORD: Orionsbelt32
+
+mlbot:
+    USERNAME: mlbot
+    PASSWORD: Orionsbelt32
+
+test_data:
+  TEST_USERS:
+    - USERNAME: aim_test_0
+      PASSWORD: Orionsbelt32
+      USER_ID:  5
+    - USERNAME: aim_test_1
+      PASSWORD: Orionsbelt32
+      USER_ID:  6
+    - USERNAME: aim_test_2
+      PASSWORD: Orionsbelt32
+      USER_ID:  7
+

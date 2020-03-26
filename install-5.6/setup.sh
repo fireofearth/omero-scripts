@@ -398,7 +398,8 @@ echo "    application variables"
 omero config set omero.web.application_server wsgi-tcp
 omero config set omero.web.application_server.max_requests 500
 omero config set omero.web.wsgi_workers 13
-omero config set omero.web.debug
+omero config set omero.web.debug false
+omero config set omero.web.cors_origin_allow_all false
 omero_config_append "omero.web.middleware" '{"index": 0, "class": "whitenoise.middleware.WhiteNoiseMiddleware"}'
 
 echo "    CORS variables"
@@ -432,8 +433,8 @@ fi
 # N (Node.js, NPM) is required for webapps to run.
 # It is better to install these as local user and add them
 # to user path to avoid using sudo and enabling security risks
-
-if [[ ! -d ~/prog/n ]] ; then
+SHOULD_NPM_INSTALL
+if [[ -n "$SHOULD_NPM_INSTALL" ]] && [[ ! -d ~/prog/n ]] ; then
     echo "installing N Node.js version manager"
     curl -L "https://git.io/n-install" | N_PREFIX=~/prog/n bash
 fi
@@ -454,12 +455,21 @@ if [[ ! -d "$AIMVEWER_PATH" ]] ; then
     echo "installing AIMViewer"
     mkdir -p ~/code
     git clone "https://github.com/fireofearth/aimviewer.git" $AIMVEWER_PATH
-    cd "$AIMVEWER_PATH/frontend/annotator"
-    npm install
-    # requires HTML folder to not be in static dir
-    npm run build
+fi
+
+# TODO: this part breaks
+CURR_PATH="$(pwd)"
+echo "going to $AIMVEWER_PATH/frontend/annotator to NPM install and build"
+cd "$AIMVEWER_PATH/frontend/annotator"
+ls
+npm install
+npm run build
+cd "$CURR_PATH"
+ls
+
+if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -q "aimviewer" ; then
+    echo "Install aimviewer Python package from $AIMVIEWER_PATH"
     $VENV_BIN/pip install -e "$AIMVIEWER_PATH"
-    cd
 fi
 
 create_postgres_database 'aimviewer'
@@ -468,7 +478,6 @@ create_postgres_database 'aimviewer_test'
 omero_config_append "omero.web.apps" "\"aimviewer\""
 omero_config_append "omero.web.open_with" "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
 omero config set omero.web.viewer.view aimviewer.views.main_annotator
-omero config set omero.web.django_additional_settings '["ASGI_APPLICATION", "aimviewer.routing.application"]]'
 
 ########################################
 # Add groups and users to OMERO.server #
@@ -517,6 +526,13 @@ done
 sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group_name password; do
     add_omero_user $username $first_name $last_name $group_name $password
 done
+
+# TODO: Set user/groups to AIMViewer config.yaml
+if [[ ! -f "$AIMVEWER_PATH/aimviewer/config.yaml" ]]; then
+    echo "Set user/groups to AIMViewer config.yaml"
+    sed -e "s/{{USER}}/$(whoami)/g" template.config.yaml > config.yaml
+    mv config.yaml -t "$AIMVEWER_PATH/aimviewer"
+fi
 
 ############################
 # OMERO.web startup script #

@@ -393,7 +393,7 @@ install_python_package "omero-web>=5.6.1"
 install_python_package "whitenoise<4"
 install_python_package "django-cors-headers"
 
-echo "OMERO.web DB config"
+echo "OMERO.web config"
 echo "    application variables"
 omero config set omero.web.application_server wsgi-tcp
 omero config set omero.web.application_server.max_requests 500
@@ -471,19 +471,17 @@ ls
 
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -q "aimviewer" ; then
     echo "Install aimviewer Python package from $AIMVIEWER_PATH"
-    $VENV_BIN/pip install -e "$AIMVIEWER_PATH/aimviewer"
+    $VENV_BIN/pip install -e "$AIMVIEWER_PATH"
 fi
 
 create_postgres_database 'aimviewer'
 create_postgres_database 'aimviewer_test'
 
-omero_config_append "omero.web.apps" "\"aimviewer\""
-omero_config_append "omero.web.open_with" "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
-omero config set omero.web.viewer.view aimviewer.views.main_annotator
-
 ########################################
 # Add groups and users to OMERO.server #
 ########################################
+
+# TODO: this should be before OMERO.web installation
 
 add_omero_group () {
     if [[ $# -ne 2 ]] ; then
@@ -529,12 +527,21 @@ sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group
     add_omero_user $username $first_name $last_name $group_name $password
 done
 
+##############################
+# Setup AIMViewer Django app #
+##############################
+
 # TODO: Set user/groups to AIMViewer config.yaml
 if [[ ! -f "$AIMVIEWER_PATH/aimviewer/config.yaml" ]]; then
     echo "Set user/groups to AIMViewer config.yaml"
     sed -e "s/{{USER}}/$(whoami)/g" template.config.yaml > config.yaml
     mv config.yaml -t "$AIMVIEWER_PATH/aimviewer"
 fi
+
+echo "AIMViewer config"
+omero_config_append "omero.web.apps" "\"aimviewer\""
+omero_config_append "omero.web.open_with" "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
+omero config set omero.web.viewer.view aimviewer.views.main_annotator
 
 ############################
 # OMERO.web startup script #

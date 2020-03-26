@@ -433,13 +433,16 @@ fi
 # N (Node.js, NPM) is required for webapps to run.
 # It is better to install these as local user and add them
 # to user path to avoid using sudo and enabling security risks
-SHOULD_NPM_INSTALL
 if [[ -n "$SHOULD_NPM_INSTALL" ]] && [[ ! -d ~/prog/n ]] ; then
     echo "installing N Node.js version manager"
     curl -L "https://git.io/n-install" | N_PREFIX=~/prog/n bash
 fi
 
+# TODO: not sure why this isn't working with simple source
 source ~/.profile
+source ~/.bashrc
+source ~/.profile
+source ~/.bashrc
 
 ##############################
 # Setup AIMViewer Django app #
@@ -450,17 +453,16 @@ if [[ -n "$SHOULD_INSTALL" ]]; then
     sudo apt -y install libpq-dev openslide-tools
 fi
 
-AIMVEWER_PATH=~/code/aimviewer
-if [[ ! -d "$AIMVEWER_PATH" ]] ; then
+AIMVIEWER_PATH=~/code/aimviewer
+if [[ ! -d "$AIMVIEWER_PATH" ]] ; then
     echo "installing AIMViewer"
     mkdir -p ~/code
-    git clone "https://github.com/fireofearth/aimviewer.git" $AIMVEWER_PATH
+    git clone "https://github.com/fireofearth/aimviewer.git" $AIMVIEWER_PATH
 fi
 
-# TODO: this part breaks
 CURR_PATH="$(pwd)"
-echo "going to $AIMVEWER_PATH/frontend/annotator to NPM install and build"
-cd "$AIMVEWER_PATH/frontend/annotator"
+echo "going to $AIMVIEWER_PATH/frontend/annotator to NPM install and build"
+cd "$AIMVIEWER_PATH/frontend/annotator"
 ls
 npm install
 npm run build
@@ -469,7 +471,7 @@ ls
 
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -q "aimviewer" ; then
     echo "Install aimviewer Python package from $AIMVIEWER_PATH"
-    $VENV_BIN/pip install -e "$AIMVIEWER_PATH"
+    $VENV_BIN/pip install -e "$AIMVIEWER_PATH/aimviewer"
 fi
 
 create_postgres_database 'aimviewer'
@@ -528,10 +530,10 @@ sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group
 done
 
 # TODO: Set user/groups to AIMViewer config.yaml
-if [[ ! -f "$AIMVEWER_PATH/aimviewer/config.yaml" ]]; then
+if [[ ! -f "$AIMVIEWER_PATH/aimviewer/config.yaml" ]]; then
     echo "Set user/groups to AIMViewer config.yaml"
     sed -e "s/{{USER}}/$(whoami)/g" template.config.yaml > config.yaml
-    mv config.yaml -t "$AIMVEWER_PATH/aimviewer"
+    mv config.yaml -t "$AIMVIEWER_PATH/aimviewer"
 fi
 
 ############################

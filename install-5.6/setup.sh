@@ -379,6 +379,56 @@ if ! systemctl is-active --quiet "omero@$(whoami)" ; then
     sudo systemctl start "omero@$(whoami)"
 fi
 
+########################################
+# Add groups and users to OMERO.server #
+########################################
+
+add_omero_group () {
+    if [[ $# -ne 2 ]] ; then
+        echo "incorrect number of OMERO user attributes"
+        exit 1
+    fi
+    group_name=$1
+    type=$2
+    echo "creating '$group_name' AIM user group"
+    omero group add --ignore-existing --server "$OMEROHOST" \
+        --port "$OMEROPORT" \
+        --user root \
+        --password "$ROOTPASS" \
+        --type "$type" \
+        "$group_name"
+}
+
+add_omero_user () {
+    if [[ $# -ne 5 ]] ; then
+        echo "incorrect number of OMERO user attributes"
+        exit 1
+    fi
+    username=$1
+    first_name=$2
+    last_name=$3
+    group_name=$4
+    password=$5
+    echo "creating '$username' AIMViewer user"
+    omero user add --ignore-existing --server "$OMEROHOST" \
+        --port "$OMEROPORT" \
+        --user root \
+        --password "$ROOTPASS" \
+        "$username" "$first_name" "$last_name" \
+        --group-name "$group_name" \
+        --userpassword "$password"
+}
+
+sed '1d' group_list.csv | while IFS=, read -r group_name type; do
+    add_omero_group $group_name $type
+done
+
+sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group_name password; do
+    add_omero_user $username $first_name $last_name $group_name $password
+done
+
+# TODO: add root to all groups
+
 #####################
 # Install OMERO.web #
 #####################
@@ -477,60 +527,6 @@ fi
 create_postgres_database 'aimviewer'
 create_postgres_database 'aimviewer_test'
 
-########################################
-# Add groups and users to OMERO.server #
-########################################
-
-# TODO: this should be before OMERO.web installation
-
-add_omero_group () {
-    if [[ $# -ne 2 ]] ; then
-        echo "incorrect number of OMERO user attributes"
-        exit 1
-    fi
-    group_name=$1
-    type=$2
-    echo "creating '$group_name' AIM user group"
-    omero group add --ignore-existing --server "$OMEROHOST" \
-        --port "$OMEROPORT" \
-        --user root \
-        --password "$ROOTPASS" \
-        --type "$type" \
-        "$group_name"
-}
-
-add_omero_user () {
-    if [[ $# -ne 5 ]] ; then
-        echo "incorrect number of OMERO user attributes"
-        exit 1
-    fi
-    username=$1
-    first_name=$2
-    last_name=$3
-    group_name=$4
-    password=$5
-    echo "creating '$username' AIMViewer user"
-    omero user add --ignore-existing --server "$OMEROHOST" \
-        --port "$OMEROPORT" \
-        --user root \
-        --password "$ROOTPASS" \
-        "$username" "$first_name" "$last_name" \
-        --group-name "$group_name" \
-        --userpassword "$password"
-}
-
-sed '1d' group_list.csv | while IFS=, read -r group_name type; do
-    add_omero_group $group_name $type
-done
-
-sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group_name password; do
-    add_omero_user $username $first_name $last_name $group_name $password
-done
-
-##############################
-# Setup AIMViewer Django app #
-##############################
-
 # TODO: Set user/groups to AIMViewer config.yaml
 if [[ ! -f "$AIMVIEWER_PATH/aimviewer/config.yaml" ]]; then
     echo "Set user/groups to AIMViewer config.yaml"
@@ -600,5 +596,5 @@ omero.web.debug=True
 '''
 
 # TODO: config.yaml
-
+# TODO: settings.py can't get OMERO_DATA_DIR bug
 # TODO: set up cache, users, public user, and other web app variables

@@ -585,7 +585,7 @@ if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
     sudo systemctl start "omero-web@$(whoami)"
 fi
 
-# TODO: ice.config
+# TODO: ice.config for tests
 
 '''omero.host=localhost
 omero.port=4064
@@ -595,6 +595,5 @@ omero.pass=
 omero.web.debug=True
 '''
 
-# TODO: config.yaml
 # TODO: settings.py can't get OMERO_DATA_DIR bug
 # TODO: set up cache, users, public user, and other web app variables

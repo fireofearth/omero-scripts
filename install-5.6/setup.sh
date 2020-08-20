@@ -385,7 +385,7 @@ fi
 
 add_omero_group () {
     if [[ $# -ne 2 ]] ; then
-        echo "incorrect number of OMERO user attributes"
+        echo "incorrect number of OMERO group attributes"
         exit 1
     fi
     group_name=$1
@@ -419,6 +419,22 @@ add_omero_user () {
         --userpassword "$password"
 }
 
+add_omero_user_to_group () {
+    if [[ $# -ne 2 ]] ; then
+        echo "incorrect number of arguments for add_omero_user_to_group"
+        exit 1
+    fi
+    username=$1
+    group_name=$2
+    echo "adding user $username to group $group_name"
+    omero group adduser --server "$OMEROHOST" \
+        --port "$OMEROPORT" \
+        --user root \
+        --password "$ROOTPASS" \
+        --name $group_name \
+        --user-name $username
+}
+
 sed '1d' group_list.csv | while IFS=, read -r group_name type; do
     add_omero_group $group_name $type
 done
@@ -426,6 +442,8 @@ done
 sed '1d' user_list.csv | while IFS=, read -r username first_name last_name group_name password; do
     add_omero_user $username $first_name $last_name $group_name $password
 done
+
+grep -qwF mlbot user_list.csv && add_omero_user_to_group mlbot aim_test_data
 
 # TODO: add root to all groups
 
@@ -521,7 +539,7 @@ ls
 
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -q "aimviewer" ; then
     echo "Install aimviewer Python package from $AIMVIEWER_PATH"
-    $VENV_BIN/pip install -e "$AIMVIEWER_PATH"
+    $VENV_BIN/pip install "$AIMVIEWER_PATH"
 fi
 
 create_postgres_database 'aimviewer'
@@ -538,6 +556,23 @@ echo "AIMViewer config"
 omero_config_append "omero.web.apps" "\"aimviewer\""
 omero_config_append "omero.web.open_with" "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
 omero config set omero.web.viewer.view aimviewer.views.main_annotator
+
+echo "AIMViewer ice.config for tests"
+ICE_CONFIG_PATH="$AIMVIEWER_PATH/aimviewer/ice.config"
+if [[ ! -f "$ICE_CONFIG_PATH" ]]; then
+    if grep -qwF aim_test user_list.csv q ; then
+        AIM_TEST_PASS=$(grep -w 'aim_test' user_list.csv | cut -d, -f5)
+        ICE_CONFIG="""omero.host=localhost
+        omero.port=4064
+        omero.rootpass=$ROOTPASS
+        omero.user=aim_test
+        omero.pass=$AIM_TEST_PASS
+        omero.web.debug=True"""
+        echo "$ICE_CONFIG" > "$ICE_CONFIG_PATH"
+    else
+        echo "    aim_test is not in user_list.csv so cannot create ice.config"
+    fi
+fi
 
 ############################
 # OMERO.web startup script #
@@ -584,16 +619,6 @@ if ! systemctl is-active --quiet "omero-web@$(whoami)" ; then
     sudo systemctl enable "omero-web@$(whoami)"
     sudo systemctl start "omero-web@$(whoami)"
 fi
-
-# TODO: ice.config for tests
-
-'''omero.host=localhost
-omero.port=4064
-omero.rootpass=
-omero.user=aim_test
-omero.pass=
-omero.web.debug=True
-'''
 
 # TODO: settings.py can't get OMERO_DATA_DIR bug
 # TODO: set up cache, users, public user, and other web app variables

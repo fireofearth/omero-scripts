@@ -445,8 +445,6 @@ done
 
 grep -qwF mlbot user_list.csv && add_omero_user_to_group mlbot aim_test_data
 
-# TODO: add root to all groups
-
 #####################
 # Install OMERO.web #
 #####################
@@ -456,10 +454,10 @@ omero_config_append () {
         omero config append "$1" "$2"
     fi
 }
-
+install_python_package "django==1.11"
+install_python_package "django-cors-headers==1.3.1"
 install_python_package "omero-web>=5.6.1"
 install_python_package "whitenoise<4"
-install_python_package "django-cors-headers"
 
 echo "OMERO.web config"
 echo "    application variables"
@@ -506,7 +504,6 @@ if [[ -n "$SHOULD_NPM_INSTALL" ]] && [[ ! -d ~/prog/n ]] ; then
     curl -L "https://git.io/n-install" | N_PREFIX=~/prog/n bash
 fi
 
-# TODO: not sure why this isn't working with simple source
 source ~/.profile
 source ~/.bashrc
 source ~/.profile
@@ -539,7 +536,7 @@ ls
 
 if [[ -n "$SHOULD_PIP_INSTALL" ]] && ! $VENV_BIN/pip freeze | grep -q "aimviewer" ; then
     echo "Install aimviewer Python package from $AIMVIEWER_PATH"
-    $VENV_BIN/pip install "$AIMVIEWER_PATH"
+    $VENV_BIN/pip install -e "$AIMVIEWER_PATH"
 fi
 
 create_postgres_database 'aimviewer'
@@ -555,7 +552,7 @@ fi
 echo "AIMViewer config"
 omero_config_append "omero.web.apps" "\"aimviewer\""
 omero_config_append "omero.web.open_with" "[\"AIM annotator\", \"aimviewer\", {\"supported_objects\": [\"image\"], \"script_url\": \"aimviewer/openwith_viewer.js\"}]"
-omero config set omero.web.viewer.view aimviewer.views.main_annotator
+omero config set omero.web.viewer.view aimviewer.views.annotator
 
 echo "AIMViewer ice.config for tests"
 ICE_CONFIG_PATH="$AIMVIEWER_PATH/aimviewer/ice.config"
